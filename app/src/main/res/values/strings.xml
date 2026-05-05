@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">LauncherCalmado</string>
+    <string name="accessibility_description">Permite que la barra de navegación ejecute acciones de sistema como Atrás e Inicio.</string>
+</resources>
