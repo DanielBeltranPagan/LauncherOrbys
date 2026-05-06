@@ -123,9 +123,8 @@ class MainActivity : ComponentActivity() {
         val hasOverlay = Settings.canDrawOverlays(this)
         val hasAccessibility = isAccessibilityServiceEnabled()
 
-        if (hasOverlay) {
-            startService(Intent(this, ServicioBarra::class.java))
-        }
+        // El servicio de accesibilidad se encarga de mostrar la barra automáticamente
+        // No necesitamos llamar a startService(ServicioBarra)
 
         if (showingPermissionDialog) return
 
