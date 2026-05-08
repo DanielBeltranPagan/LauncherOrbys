@@ -1,109 +1,137 @@
 package com.example.launchercalmado
 
-import android.accessibilityservice.AccessibilityServiceInfo
 import android.app.AlertDialog
+import android.app.WallpaperColors
+import android.app.WallpaperManager
 import android.content.*
-import android.content.pm.ResolveInfo
-import android.net.Uri
-import android.os.Bundle
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.net.Uri
+import android.os.Build
+import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.provider.Settings
-import android.text.TextUtils
-import android.view.accessibility.AccessibilityManager
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.core.content.ContextCompat
+import androidx.compose.animation.*
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.LocalOverscrollConfiguration
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.grid.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.core.graphics.drawable.toBitmap
+import androidx.core.content.ContextCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import com.example.launchercalmado.ui.theme.LauncherCalmadoTheme
 
 class MainActivity : ComponentActivity() {
 
-    private var appsList by mutableStateOf<List<ResolveInfo>>(emptyList())
-    private var drawerVisible by mutableStateOf(false)
+    private var mostrarMenuContextual by mutableStateOf(false)
+    private var uriImagenFondo by mutableStateOf<Uri?>(null)
+    private var colorSolido by mutableStateOf<Color?>(null)
+    private var esTemaClaro by mutableStateOf(true)
 
     private val receptorBarra = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             when (intent?.getStringExtra("comando")) {
-                "APPS" -> drawerVisible = !drawerVisible
-                "HOME", "BACK", "GOOGLE", "FILES", "RECENTS" -> drawerVisible = false
+                "HOME", "BACK", "GOOGLE", "FILES", "RECENTS", "APPS" -> cerrarTodo()
             }
         }
     }
 
+    private val receptorWallpaper = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            uriImagenFondo = null
+            colorSolido = null
+            guardarPreferencias("", true)
+        }
+    }
+
+    @OptIn(ExperimentalFoundationApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        appsList = getInstalledApps()
+        cargarPreferencias()
         
-        ContextCompat.registerReceiver(
-            this,
-            receptorBarra,
-            IntentFilter("ACCION_BARRA"),
-            ContextCompat.RECEIVER_EXPORTED
-        )
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        window.setBackgroundDrawableResource(android.R.color.transparent)
+        
+        val controller = WindowInsetsControllerCompat(window, window.decorView)
+        controller.hide(WindowInsetsCompat.Type.systemBars())
+        controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+
+        ContextCompat.registerReceiver(this, receptorBarra, IntentFilter("ACCION_BARRA"), ContextCompat.RECEIVER_EXPORTED)
+        registerReceiver(receptorWallpaper, IntentFilter(Intent.ACTION_WALLPAPER_CHANGED))
+        
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+            val wm = WallpaperManager.getInstance(this)
+            wm.addOnColorsChangedListener({ colors, _ ->
+                if (uriImagenFondo == null && colorSolido == null) actualizarColoresDesdeSistema(colors)
+            }, Handler(Looper.getMainLooper()))
+        }
 
         checkAndStartService()
 
-
         setContent {
             LauncherCalmadoTheme {
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    color = androidx.compose.ui.graphics.Color.White
-                ) {
-                    Box(modifier = Modifier.fillMaxSize().padding(bottom = 45.dp)) {
-                        if (drawerVisible) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth(0.40f) // Menos ancho
-                                    .fillMaxHeight(0.5f) // Altura reducida
-                                    .align(Alignment.BottomCenter)
-                                    .padding(bottom = 60.dp) // Más separación de la barra
-                                    .clip(RoundedCornerShape(24.dp)) // Bordes redondeados
-                                    .background(Color.Gray.copy(alpha = 0.8f)) // Gris transparente
-                            ) {
-                                LazyVerticalGrid(
-                                    columns = GridCells.Fixed(4),
-                                    contentPadding = PaddingValues(16.dp)
-                                ) {
-                                    items(appsList) { app ->
-                                        Column(
-                                            modifier = Modifier
-                                                .padding(8.dp)
-                                                .clickable {
-                                                    packageManager.getLaunchIntentForPackage(app.activityInfo.packageName)
-                                                        ?.let { startActivity(it) }
-                                                    drawerVisible = false // Cerrar al abrir app
-                                                },
-                                            horizontalAlignment = Alignment.CenterHorizontally
-                                        ) {
-                                            Image(
-                                                bitmap = app.loadIcon(packageManager).toBitmap().asImageBitmap(),
-                                                contentDescription = null,
-                                                modifier = Modifier.size(45.dp)
-                                            )
-                                            Text(
-                                                app.loadLabel(packageManager).toString(),
-                                                style = MaterialTheme.typography.labelSmall,
-                                                maxLines = 1,
-                                                color = Color.White // Texto blanco sobre fondo gris
-                                            )
-                                        }
-                                    }
-                                }
+                CompositionLocalProvider(LocalOverscrollConfiguration provides null) {
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .pointerInput(Unit) {
+                                detectTapGestures(
+                                    onLongPress = { mostrarMenuContextual = true },
+                                    onTap = { cerrarTodo() }
+                                )
+                            },
+                        color = colorSolido ?: Color.Transparent
+                    ) {
+                        // Fondo personalizado si existe
+                        uriImagenFondo?.let { uri ->
+                            val bitmap = remember(uri) { 
+                                try {
+                                    val inputStream = contentResolver.openInputStream(uri)
+                                    BitmapFactory.decodeStream(inputStream)
+                                } catch (e: Exception) { null }
+                            }
+                            bitmap?.let {
+                                Image(
+                                    bitmap = it.asImageBitmap(),
+                                    contentDescription = null,
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = ContentScale.Crop
+                                )
+                            }
+                        }
+
+                        Box(modifier = Modifier.fillMaxSize()) {
+                            if (mostrarMenuContextual) {
+                                MenuContextual(
+                                    onPersonalizarClick = {
+                                        abrirWallpaperStyleSistema()
+                                        mostrarMenuContextual = false
+                                    },
+                                    onDismiss = { mostrarMenuContextual = false }
+                                )
                             }
                         }
                     }
@@ -112,95 +140,130 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private var showingPermissionDialog = false
-
-    override fun onResume() {
-        super.onResume()
-        checkAndStartService()
+    @Composable
+    fun BoxScope.MenuContextual(onPersonalizarClick: () -> Unit, onDismiss: () -> Unit) {
+        // Fondo invisible para cerrar al tocar fuera
+        Box(modifier = Modifier.fillMaxSize().clickable { onDismiss() })
+        
+        Card(
+            modifier = Modifier
+                .align(Alignment.Center)
+                .width(220.dp),
+            shape = RoundedCornerShape(28.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(8.dp)),
+            elevation = CardDefaults.cardElevation(12.dp)
+        ) {
+            Column(modifier = Modifier.padding(8.dp)) {
+                TextButton(
+                    onClick = onPersonalizarClick,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(20.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Default.Palette, null, tint = MaterialTheme.colorScheme.primary)
+                        Spacer(modifier = Modifier.width(16.dp))
+                        Text(
+                            "Fondo y estilo",
+                            color = MaterialTheme.colorScheme.onSurface,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
+        }
     }
+
+    private fun abrirWallpaperStyleSistema() {
+        try {
+            // Intent estándar para abrir el selector de fondos y estilos en Android 12+
+            val intent = Intent(Intent.ACTION_SET_WALLPAPER)
+            startActivity(intent)
+        } catch (e: Exception) {
+            // Fallback para dispositivos que no soportan el intent directo
+            try {
+                val intent = Intent(WallpaperManager.ACTION_CHANGE_LIVE_WALLPAPER)
+                startActivity(intent)
+            } catch (e2: Exception) {
+                Toast.makeText(this, "No se pudo abrir el selector del sistema", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    private fun cerrarTodo() {
+        mostrarMenuContextual = false
+    }
+
+    private fun actualizarColoresDesdeSistema(colors: WallpaperColors?) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1 && colors != null) {
+            esTemaClaro = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                (colors.colorHints and WallpaperColors.HINT_SUPPORTS_DARK_TEXT) != 0
+            } else true
+            notificarCambioTema()
+        }
+    }
+
+    override fun onBackPressed() {
+        if (mostrarMenuContextual) mostrarMenuContextual = false
+        else super.onBackPressed()
+    }
+
+    private fun notificarCambioTema() {
+        val intent = Intent("CAMBIO_TEMA")
+        intent.putExtra("esClaro", esTemaClaro)
+        sendBroadcast(intent)
+    }
+
+    private fun guardarPreferencias(fondo: String, claro: Boolean) {
+        val prefs = getSharedPreferences("launcher_prefs", MODE_PRIVATE)
+        prefs.edit().putString("fondo", fondo).putBoolean("esClaro", claro).apply()
+    }
+
+    private fun cargarPreferencias() {
+        val prefs = getSharedPreferences("launcher_prefs", MODE_PRIVATE)
+        val fondoStr = prefs.getString("fondo", null)
+        esTemaClaro = prefs.getBoolean("esClaro", true)
+        if (fondoStr != null && fondoStr.isNotEmpty()) {
+            if (fondoStr.startsWith("content://")) { uriImagenFondo = Uri.parse(fondoStr); colorSolido = null }
+            else { try { colorSolido = Color(fondoStr.toULong()) } catch (e: Exception) {} }
+        }
+    }
+
+    override fun onResume() { super.onResume(); checkAndStartService() }
 
     private fun checkAndStartService() {
-        val hasOverlay = Settings.canDrawOverlays(this)
-        val hasAccessibility = isAccessibilityServiceEnabled()
-
-        // El servicio de accesibilidad se encarga de mostrar la barra automáticamente
-        // No necesitamos llamar a startService(ServicioBarra)
-
         if (showingPermissionDialog) return
-
         if (!isDefaultLauncher()) {
             showingPermissionDialog = true
-            AlertDialog.Builder(this)
-                .setTitle("Configurar Launcher")
-                .setMessage("Para que la app funcione siempre correctamente, establécela como tu Launcher predeterminado.")
-                .setPositiveButton("Configurar") { _, _ ->
-                    showingPermissionDialog = false
-                    val intent = Intent(Settings.ACTION_HOME_SETTINGS)
-                    startActivity(intent)
-                }
-                .setNegativeButton("Más tarde") { _, _ -> showingPermissionDialog = false }
-                .show()
+            AlertDialog.Builder(this).setTitle("Configurar Launcher").setMessage("Establécelo como predeterminado para mejor estabilidad.")
+                .setPositiveButton("Configurar") { _, _ -> showingPermissionDialog = false; startActivity(Intent(Settings.ACTION_HOME_SETTINGS)) }
+                .setNegativeButton("Más tarde") { _, _ -> showingPermissionDialog = false }.show()
             return
         }
-
-        if (!hasOverlay) {
-            showingPermissionDialog = true
-            AlertDialog.Builder(this)
-                .setTitle("Permiso de Superposición")
-                .setMessage("Para mostrar la barra de navegación, activa 'Mostrar sobre otras aplicaciones'.")
-                .setPositiveButton("Configurar") { _, _ ->
-                    showingPermissionDialog = false
-                    startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
-                }
-                .setNegativeButton("Ahora no") { _, _ -> showingPermissionDialog = false }
-                .setCancelable(false)
-                .show()
-        } else if (!hasAccessibility) {
-            showingPermissionDialog = true
-            AlertDialog.Builder(this)
-                .setTitle("Permiso de Accesibilidad")
-                .setMessage("Para que los botones de Atrás, Inicio y Recientes funcionen, activa el servicio en Ajustes.")
-                .setPositiveButton("Ir a Ajustes") { _, _ ->
-                    showingPermissionDialog = false
-                    startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-                }
-                .setNegativeButton("Ahora no") { _, _ -> showingPermissionDialog = false }
-                .setCancelable(false)
-                .show()
-        }
+        val hasOverlay = Settings.canDrawOverlays(this)
+        val hasAccessibility = isAccessibilityServiceEnabled()
+        if (!hasOverlay) { showingPermissionDialog = true; startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName"))) }
+        else if (!hasAccessibility) { showingPermissionDialog = true; startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
     }
 
+    private var showingPermissionDialog = false
     private fun isDefaultLauncher(): Boolean {
-        val intent = Intent(Intent.ACTION_MAIN)
-        intent.addCategory(Intent.CATEGORY_HOME)
+        val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
         val resolveInfo = packageManager.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY)
         return resolveInfo?.activityInfo?.packageName == packageName
     }
 
     private fun isAccessibilityServiceEnabled(): Boolean {
-        val expectedComponentName = ComponentName(this, AccesibilidadService::class.java).flattenToString()
-        val enabledServices = Settings.Secure.getString(
-            contentResolver,
-            Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
-        ) ?: return false
-
-        val splitter = TextUtils.SimpleStringSplitter(':')
-        splitter.setString(enabledServices)
-        while (splitter.hasNext()) {
-            val componentName = splitter.next()
-            if (componentName.equals(expectedComponentName, ignoreCase = true)) {
-                return true
-            }
-        }
-        return false
+        val expected = ComponentName(this, AccesibilidadService::class.java).flattenToString()
+        val enabled = Settings.Secure.getString(contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES) ?: return false
+        return enabled.split(':').any { it.equals(expected, ignoreCase = true) }
     }
 
-    private fun getInstalledApps(): List<ResolveInfo> {
-        return packageManager.queryIntentActivities(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER), 0)
-    }
-
-    override fun onDestroy() {
+    override fun onDestroy() { 
         super.onDestroy()
-        unregisterReceiver(receptorBarra)
+        try { unregisterReceiver(receptorBarra) } catch (e: Exception) {}
+        try { unregisterReceiver(receptorWallpaper) } catch (e: Exception) {}
     }
 }
