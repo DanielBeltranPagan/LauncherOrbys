@@ -32,12 +32,15 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import kotlin.math.roundToInt
 import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -47,6 +50,7 @@ import com.example.launchercalmado.ui.theme.LauncherCalmadoTheme
 class MainActivity : ComponentActivity() {
 
     private var mostrarMenuContextual by mutableStateOf(false)
+    private var posicionToque by mutableStateOf(Offset.Zero)
     private var uriImagenFondo by mutableStateOf<Uri?>(null)
     private var colorSolido by mutableStateOf<Color?>(null)
     private var esTemaClaro by mutableStateOf(true)
@@ -75,9 +79,7 @@ class MainActivity : ComponentActivity() {
         WindowCompat.setDecorFitsSystemWindows(window, false)
         window.setBackgroundDrawableResource(android.R.color.transparent)
         
-        val controller = WindowInsetsControllerCompat(window, window.decorView)
-        controller.hide(WindowInsetsCompat.Type.systemBars())
-        controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        hideStatusBar()
 
         ContextCompat.registerReceiver(this, receptorBarra, IntentFilter("ACCION_BARRA"), ContextCompat.RECEIVER_EXPORTED)
         registerReceiver(receptorWallpaper, IntentFilter(Intent.ACTION_WALLPAPER_CHANGED))
@@ -99,7 +101,10 @@ class MainActivity : ComponentActivity() {
                             .fillMaxSize()
                             .pointerInput(Unit) {
                                 detectTapGestures(
-                                    onLongPress = { mostrarMenuContextual = true },
+                                    onLongPress = { offset ->
+                                        posicionToque = offset
+                                        mostrarMenuContextual = true
+                                    },
                                     onTap = { cerrarTodo() }
                                 )
                             },
@@ -123,9 +128,10 @@ class MainActivity : ComponentActivity() {
                             }
                         }
 
-                        Box(modifier = Modifier.fillMaxSize()) {
+                        BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
                             if (mostrarMenuContextual) {
                                 MenuContextual(
+                                    posicion = posicionToque,
                                     onPersonalizarClick = {
                                         abrirWallpaperStyleSistema()
                                         mostrarMenuContextual = false
@@ -141,13 +147,18 @@ class MainActivity : ComponentActivity() {
     }
 
     @Composable
-    fun BoxScope.MenuContextual(onPersonalizarClick: () -> Unit, onDismiss: () -> Unit) {
+    fun BoxWithConstraintsScope.MenuContextual(posicion: Offset, onPersonalizarClick: () -> Unit, onDismiss: () -> Unit) {
         // Fondo invisible para cerrar al tocar fuera
         Box(modifier = Modifier.fillMaxSize().clickable { onDismiss() })
         
         Card(
             modifier = Modifier
-                .align(Alignment.Center)
+                .offset { 
+                    IntOffset(
+                        posicion.x.roundToInt().coerceIn(0, (constraints.maxWidth - 220.dp.toPx().toInt()).coerceAtLeast(0)), 
+                        posicion.y.roundToInt().coerceIn(0, (constraints.maxHeight - 80.dp.toPx().toInt()).coerceAtLeast(0))
+                    ) 
+                }
                 .width(220.dp),
             shape = RoundedCornerShape(28.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(8.dp)),
@@ -231,7 +242,25 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    override fun onResume() { super.onResume(); checkAndStartService() }
+    override fun onResume() { 
+        super.onResume()
+        hideStatusBar()
+        checkAndStartService() 
+    }
+
+    private fun hideStatusBar() {
+        val windowInsetsController = WindowCompat.getInsetsController(window, window.decorView)
+        windowInsetsController.systemBarsBehavior = 
+            WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        windowInsetsController.hide(WindowInsetsCompat.Type.systemBars())
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) {
+            hideStatusBar()
+        }
+    }
 
     private fun checkAndStartService() {
         if (showingPermissionDialog) return
