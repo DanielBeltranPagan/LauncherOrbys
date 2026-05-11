@@ -16,9 +16,12 @@ import android.graphics.Rect
 import android.net.Uri
 import android.net.wifi.WifiManager
 import android.os.Build
+import android.provider.Settings
+import android.provider.AlarmClock
 import android.view.Gravity
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
+import android.widget.Toast
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -46,6 +49,8 @@ import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import com.example.launchercalmado.ui.components.NavBar
+import com.example.launchercalmado.ui.components.StatusBar
+import com.example.launchercalmado.ui.components.SystemOptionsPanel
 import com.example.launchercalmado.ui.theme.LauncherCalmadoTheme
 
 class AccesibilidadService : AccessibilityService(), SavedStateRegistryOwner, LifecycleOwner {
@@ -54,20 +59,20 @@ class AccesibilidadService : AccessibilityService(), SavedStateRegistryOwner, Li
     private lateinit var vistaNav: ComposeView
     private lateinit var vistaStatus: ComposeView
     private lateinit var vistaDrawer: ComposeView
+    private lateinit var vistaSystemOptions: ComposeView
     
     // Estados adaptativos
     private var iconColorStatus by mutableStateOf(Color.White)
     private var iconColorNav by mutableStateOf(Color.White)
     private var navBarBackground by mutableStateOf(Color.Black)
 
-    private var estaUSB by mutableStateOf(false)
-    private var wifiActivo by mutableStateOf(false)
-    private var bluetoothActivo by mutableStateOf(false)
-
     // Estados del Drawer Global
     private var drawerVisible by mutableStateOf(false)
     private var searchQuery by mutableStateOf("")
     private var appsList by mutableStateOf<List<ResolveInfo>>(emptyList())
+
+    // Estados de Opciones de Sistema
+    private var systemOptionsVisible by mutableStateOf(false)
 
     private val lifecycleRegistry = LifecycleRegistry(this)
     override val lifecycle: Lifecycle = lifecycleRegistry
@@ -94,10 +99,31 @@ class AccesibilidadService : AccessibilityService(), SavedStateRegistryOwner, Li
                 }
                 "RECENTS" -> {
                     if (drawerVisible) toggleDrawer()
+                    if (systemOptionsVisible) toggleSystemOptions()
                     performGlobalAction(GLOBAL_ACTION_RECENTS)
                 }
                 "APPS" -> toggleDrawer()
+                "SYSTEM_OPTIONS" -> toggleSystemOptions()
             }
+        }
+    }
+
+    private fun toggleSystemOptions() {
+        if (!systemOptionsVisible) {
+            systemOptionsVisible = true
+            val params = WindowManager.LayoutParams(
+                WindowManager.LayoutParams.MATCH_PARENT,
+                WindowManager.LayoutParams.MATCH_PARENT,
+                WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
+                PixelFormat.TRANSLUCENT
+            )
+            windowManager.addView(vistaSystemOptions, params)
+        } else {
+            if (::vistaSystemOptions.isInitialized && vistaSystemOptions.parent != null) {
+                windowManager.removeView(vistaSystemOptions)
+            }
+            systemOptionsVisible = false
         }
     }
 
@@ -134,23 +160,6 @@ class AccesibilidadService : AccessibilityService(), SavedStateRegistryOwner, Li
         }
     }
 
-    private val receptorSensores = object : BroadcastReceiver() {
-        override fun onReceive(context: Context?, intent: Intent?) {
-            when (intent?.action) {
-                Intent.ACTION_POWER_CONNECTED -> estaUSB = true
-                Intent.ACTION_POWER_DISCONNECTED -> estaUSB = false
-                WifiManager.WIFI_STATE_CHANGED_ACTION -> {
-                    val state = intent.getIntExtra(WifiManager.EXTRA_WIFI_STATE, WifiManager.WIFI_STATE_UNKNOWN)
-                    wifiActivo = state == WifiManager.WIFI_STATE_ENABLED
-                }
-                BluetoothAdapter.ACTION_STATE_CHANGED -> {
-                    val state = intent.getIntExtra(BluetoothAdapter.EXTRA_STATE, BluetoothAdapter.ERROR)
-                    bluetoothActivo = state == BluetoothAdapter.STATE_ON
-                }
-            }
-        }
-    }
-
     override fun onCreate() {
         super.onCreate()
         savedStateRegistryController.performRestore(null)
@@ -169,6 +178,7 @@ class AccesibilidadService : AccessibilityService(), SavedStateRegistryOwner, Li
         val density = resources.displayMetrics.density
 
         setupDrawerOverlay()
+        setupSystemOptionsOverlay()
         setupBarraNavegacion(density)
         setupBarraStatus(density)
         registrarReceptores()
@@ -260,6 +270,46 @@ class AccesibilidadService : AccessibilityService(), SavedStateRegistryOwner, Li
         }
     }
 
+    private fun setupSystemOptionsOverlay() {
+        vistaSystemOptions = ComposeView(this).apply {
+            setViewTreeLifecycleOwner(this@AccesibilidadService)
+            setViewTreeSavedStateRegistryOwner(this@AccesibilidadService)
+
+            setContent {
+                LauncherCalmadoTheme {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clickable(interactionSource = null, indication = null) { toggleSystemOptions() },
+                        contentAlignment = Alignment.BottomCenter
+                    ) {
+                        SystemOptionsPanel(
+                            onSettingsClick = {
+                                startActivity(Intent(android.provider.Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                                toggleSystemOptions()
+                            },
+                            onWifiClick = {
+                                startActivity(Intent(android.provider.Settings.ACTION_WIFI_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                                toggleSystemOptions()
+                            },
+                            onBluetoothClick = {
+                                startActivity(Intent(android.provider.Settings.ACTION_BLUETOOTH_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                                toggleSystemOptions()
+                            },
+                            onAirplaneModeClick = {
+                                startActivity(Intent(android.provider.Settings.ACTION_AIRPLANE_MODE_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                                toggleSystemOptions()
+                            },
+                            modifier = Modifier
+                                .padding(bottom = 60.dp)
+                                .clickable(interactionSource = null, indication = null) { /* Consume */ }
+                        )
+                    }
+                }
+            }
+        }
+    }
+
     private fun setupBarraStatus(density: Float) {
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT,
@@ -278,25 +328,10 @@ class AccesibilidadService : AccessibilityService(), SavedStateRegistryOwner, Li
 
             setContent {
                 LauncherCalmadoTheme {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(horizontal = 20.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.End
-                    ) {
-                        if (estaUSB) {
-                            Icon(Icons.Default.Usb, null, tint = if(iconColorStatus == Color.Black) Color.Blue else Color.Cyan, modifier = Modifier.size(20.dp))
-                            Spacer(modifier = Modifier.width(12.dp))
-                        }
-                        if (bluetoothActivo) {
-                            Icon(Icons.Default.Bluetooth, null, tint = iconColorStatus, modifier = Modifier.size(20.dp))
-                            Spacer(modifier = Modifier.width(12.dp))
-                        }
-                        if (wifiActivo) {
-                            Icon(Icons.Default.Wifi, null, tint = iconColorStatus, modifier = Modifier.size(20.dp))
-                        }
-                    }
+                    StatusBar(
+                        isDarkTheme = iconColorStatus == Color.White,
+                        modifier = Modifier.fillMaxSize()
+                    )
                 }
             }
         }
@@ -340,6 +375,15 @@ class AccesibilidadService : AccessibilityService(), SavedStateRegistryOwner, Li
                                         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                                         try { startActivity(intent) } catch (e: Exception) {}
                                     }
+                                    "CLOCK" -> {
+                                        try {
+                                            val intent = Intent(AlarmClock.ACTION_SHOW_ALARMS)
+                                            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                            startActivity(intent)
+                                        } catch (e: Exception) {
+                                            Toast.makeText(this@AccesibilidadService, "No se pudo abrir el reloj", Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
                                 }
                                 sendBroadcast(Intent("ACCION_BARRA").putExtra("comando", accion))
                             }, 
@@ -359,14 +403,6 @@ class AccesibilidadService : AccessibilityService(), SavedStateRegistryOwner, Li
     }
 
     private fun registrarReceptores() {
-        val filter = IntentFilter().apply {
-            addAction(Intent.ACTION_POWER_CONNECTED)
-            addAction(Intent.ACTION_POWER_DISCONNECTED)
-            addAction(WifiManager.WIFI_STATE_CHANGED_ACTION)
-            addAction(BluetoothAdapter.ACTION_STATE_CHANGED)
-        }
-        registerReceiver(receptorSensores, filter)
-
         val themeFilter = IntentFilter("CAMBIO_TEMA")
         themeFilter.addAction("COMANDO_SISTEMA")
         themeFilter.addAction("ACCION_BARRA")
@@ -381,10 +417,10 @@ class AccesibilidadService : AccessibilityService(), SavedStateRegistryOwner, Li
         if (::vistaNav.isInitialized) windowManager.removeView(vistaNav)
         if (::vistaStatus.isInitialized) windowManager.removeView(vistaStatus)
         if (::vistaDrawer.isInitialized && vistaDrawer.parent != null) windowManager.removeView(vistaDrawer)
+        if (::vistaSystemOptions.isInitialized && vistaSystemOptions.parent != null) windowManager.removeView(vistaSystemOptions)
         
         try {
             unregisterReceiver(receptorComandos)
-            unregisterReceiver(receptorSensores)
         } catch (e: Exception) {}
         super.onDestroy()
     }

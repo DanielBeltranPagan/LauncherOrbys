@@ -46,6 +46,7 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import com.example.launchercalmado.ui.theme.LauncherCalmadoTheme
+import com.example.launchercalmado.ui.components.StatusBar
 
 class MainActivity : ComponentActivity() {
 
@@ -128,16 +129,23 @@ class MainActivity : ComponentActivity() {
                             }
                         }
 
-                        BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-                            if (mostrarMenuContextual) {
-                                MenuContextual(
-                                    posicion = posicionToque,
-                                    onPersonalizarClick = {
-                                        abrirWallpaperStyleSistema()
-                                        mostrarMenuContextual = false
-                                    },
-                                    onDismiss = { mostrarMenuContextual = false }
-                                )
+                        Column(modifier = Modifier.fillMaxSize()) {
+                            StatusBar(
+                                isDarkTheme = !esTemaClaro,
+                                modifier = Modifier.statusBarsPadding()
+                            )
+                            
+                            BoxWithConstraints(modifier = Modifier.weight(1f)) {
+                                if (mostrarMenuContextual) {
+                                    MenuContextual(
+                                        posicion = posicionToque,
+                                        onPersonalizarClick = {
+                                            abrirWallpaperStyleSistema()
+                                            mostrarMenuContextual = false
+                                        },
+                                        onDismiss = { mostrarMenuContextual = false }
+                                    )
+                                }
                             }
                         }
                     }
