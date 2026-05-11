@@ -4,29 +4,35 @@ import android.content.Context
 import android.content.Intent
 import com.example.launchercalmado.data.AppInfo
 
+/**
+ * Clase encargada de gestionar la carga de aplicaciones instaladas en el dispositivo.
+ */
 class AppLoader(private val context: Context) {
 
+    /**
+     * Obtiene una lista de aplicaciones que tienen una actividad de lanzamiento (launcher).
+     * La lista se devuelve ordenada alfabéticamente por el nombre de la aplicación.
+     */
     fun loadInstalledApps(): List<AppInfo> {
-        val apps = mutableListOf<AppInfo>()
-        val manager = context.packageManager
+        val packageManager = context.packageManager
 
-        // Buscamos solo las apps que se pueden "abrir" (tienen icono en el menú)
+        // Filtramos para obtener solo las aplicaciones que se pueden "abrir" desde el menú
         val intent = Intent(Intent.ACTION_MAIN, null).apply {
             addCategory(Intent.CATEGORY_LAUNCHER)
         }
 
-        val availableActivities = manager.queryIntentActivities(intent, 0)
+        val availableActivities = packageManager.queryIntentActivities(intent, 0)
 
-        for (ri in availableActivities) {
-            val app = AppInfo(
-                label = ri.loadLabel(manager).toString(),
-                packageName = ri.activityInfo.packageName,
-                icon = ri.activityInfo.loadIcon(manager)
+        // Mapeamos los resultados de ResolveInfo a nuestro modelo AppInfo
+        val apps = availableActivities.map { resolveInfo ->
+            AppInfo(
+                label = resolveInfo.loadLabel(packageManager).toString(),
+                packageName = resolveInfo.activityInfo.packageName,
+                icon = resolveInfo.loadIcon(packageManager)
             )
-            apps.add(app)
         }
 
-        // Las ordenamos de la A a la Z para que no sea un caos
+        // Retornamos la lista ordenada alfabéticamente (case-insensitive)
         return apps.sortedBy { it.label.lowercase() }
     }
 }

@@ -3,6 +3,7 @@ package com.example.launchercalmado
 import android.content.Context
 import android.content.Intent
 import android.graphics.PixelFormat
+import android.media.AudioManager
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
@@ -35,7 +36,11 @@ class ServicioBarra : LifecycleService(), SavedStateRegistryOwner {
     private lateinit var vistaNav: ComposeView
     private lateinit var vistaSystemOptions: ComposeView
 
+    // --- Estados reactivos para la UI ---
     private var systemOptionsVisible by mutableStateOf(false)
+    private var currentBrightness by mutableStateOf(0.5f)
+    private var currentVolume by mutableStateOf(0.5f)
+    private lateinit var audioManager: AudioManager
 
     private val savedStateRegistryController = SavedStateRegistryController.create(this)
     override val savedStateRegistry = savedStateRegistryController.savedStateRegistry
@@ -45,14 +50,17 @@ class ServicioBarra : LifecycleService(), SavedStateRegistryOwner {
         super.onCreate()
 
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
+        audioManager = getSystemService(AUDIO_SERVICE) as AudioManager
         val density = resources.displayMetrics.density
 
+        // Preparamos el overlay de opciones del sistema antes de mostrarlo
         setupSystemOptionsOverlay()
         
+        // Configuración de la barra de navegación (tamaño, tipo de ventana y posición)
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT,
-            (45 * density).toInt(),
-            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+            (45 * density).toInt(), // Altura de la barra
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY, // Overlay sobre otras apps
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                     WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
             PixelFormat.TRANSLUCENT
@@ -65,14 +73,11 @@ class ServicioBarra : LifecycleService(), SavedStateRegistryOwner {
             setViewTreeLifecycleOwner(this@ServicioBarra)
             setViewTreeSavedStateRegistryOwner(this@ServicioBarra)
 
-            // Intentamos configurar consumeWindowInsets si está disponible via reflexión o si el SDK es suficiente
-            // Para evitar errores de compilación si la versión de la librería es anterior a la que lo introdujo:
+            // Evitamos que la barra consuma los insets del sistema (como el teclado)
             try {
                 val method = javaClass.getMethod("setConsumeWindowInsets", Boolean::class.javaPrimitiveType)
                 method.invoke(this, false)
-            } catch (e: Exception) {
-                // Si no existe el método, simplemente lo ignoramos
-            }
+            } catch (e: Exception) {}
 
             setPadding(0, 0, 0, 0)
 
@@ -92,9 +97,9 @@ class ServicioBarra : LifecycleService(), SavedStateRegistryOwner {
                                     intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                                     try { startActivity(intent) } catch (e: Exception) {}
                                 }
-                                "SYSTEM_OPTIONS" -> toggleSystemOptions()
+                                "SYSTEM_OPTIONS" -> toggleSystemOptions() // Abre/Cierra el panel
                             }
-                            // Enviamos los broadcasts para que otros componentes (como el drawer) reaccionen
+                            // Notifica a otros componentes del sistema sobre la acción
                             sendBroadcast(Intent("ACCION_BARRA").putExtra("comando", accion))
                             sendBroadcast(Intent("COMANDO_SISTEMA").putExtra("comando", accion))
                         })
@@ -102,11 +107,16 @@ class ServicioBarra : LifecycleService(), SavedStateRegistryOwner {
                 }
             }
         }
+        // Añadimos la vista de la barra a la pantalla
         windowManager.addView(vistaNav, params)
     }
 
+    /**
+     * Alterna la visibilidad del panel de opciones (Brillo, Volumen, Wi-Fi, etc.)
+     */
     private fun toggleSystemOptions() {
         if (!systemOptionsVisible) {
+            actualizarValoresSistema() // Lee el brillo/volumen real antes de mostrar el panel
             systemOptionsVisible = true
             val params = WindowManager.LayoutParams(
                 WindowManager.LayoutParams.MATCH_PARENT,
@@ -124,6 +134,9 @@ class ServicioBarra : LifecycleService(), SavedStateRegistryOwner {
         }
     }
 
+    /**
+     * Define el diseño y comportamiento del panel de opciones (Overlay de pantalla completa)
+     */
     private fun setupSystemOptionsOverlay() {
         vistaSystemOptions = ComposeView(this).apply {
             setViewTreeLifecycleOwner(this@ServicioBarra)
@@ -134,6 +147,7 @@ class ServicioBarra : LifecycleService(), SavedStateRegistryOwner {
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
+                            // Cierra el panel si se toca fuera del recuadro central
                             .clickable(interactionSource = null, indication = null) { toggleSystemOptions() },
                         contentAlignment = Alignment.BottomCenter
                     ) {
@@ -154,9 +168,13 @@ class ServicioBarra : LifecycleService(), SavedStateRegistryOwner {
                                 startActivity(Intent(Settings.ACTION_AIRPLANE_MODE_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                                 toggleSystemOptions()
                             },
+                            currentBrightness = currentBrightness,
+                            onBrightnessChange = { cambiarBrillo(it) },
+                            currentVolume = currentVolume,
+                            onVolumeChange = { cambiarVolumen(it) },
                             modifier = Modifier
                                 .padding(bottom = 60.dp)
-                                .clickable(interactionSource = null, indication = null) { /* Consume */ }
+                                .clickable(interactionSource = null, indication = null) { /* Evita que el click pase al Box de abajo */ }
                         )
                     }
                 }
@@ -164,8 +182,57 @@ class ServicioBarra : LifecycleService(), SavedStateRegistryOwner {
         }
     }
 
+    /**
+     * Obtiene los niveles actuales de volumen y brillo del sistema
+     */
+    private fun actualizarValoresSistema() {
+        // Obtener Volumen Multimedia (0.0 a 1.0)
+        val maxVol = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+        if (maxVol > 0) {
+            val curVol = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+            currentVolume = curVol.toFloat() / maxVol
+        }
+
+        // Obtener Brillo de Pantalla (0.0 a 1.0)
+        try {
+            val curBright = Settings.System.getInt(contentResolver, Settings.System.SCREEN_BRIGHTNESS)
+            currentBrightness = curBright.toFloat() / 255f
+        } catch (e: Exception) {
+            currentBrightness = 0.5f
+        }
+    }
+
+    /**
+     * Aplica el nuevo volumen al flujo de música
+     */
+    private fun cambiarVolumen(valor: Float) {
+        val maxVol = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+        val newVol = (valor * maxVol).toInt()
+        audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, newVol, 0)
+        currentVolume = valor
+    }
+
+    /**
+     * Aplica el nuevo brillo a la pantalla. Requiere permiso de escritura de ajustes.
+     */
+    private fun cambiarBrillo(valor: Float) {
+        if (Settings.System.canWrite(this)) {
+            val newBright = (valor * 255).toInt()
+            Settings.System.putInt(contentResolver, Settings.System.SCREEN_BRIGHTNESS, newBright)
+            currentBrightness = valor
+        } else {
+            // Si no tiene permiso, abre la pantalla de ajustes del sistema para concederlo
+            val intent = Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS)
+            intent.data = Uri.parse("package:$packageName")
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            startActivity(intent)
+            Toast.makeText(this, "Concede permiso para cambiar el brillo", Toast.LENGTH_SHORT).show()
+        }
+    }
+
     override fun onDestroy() {
         super.onDestroy()
+        // Limpieza de vistas al detener el servicio
         if (::vistaNav.isInitialized) windowManager.removeView(vistaNav)
         if (::vistaSystemOptions.isInitialized && vistaSystemOptions.parent != null) windowManager.removeView(vistaSystemOptions)
     }

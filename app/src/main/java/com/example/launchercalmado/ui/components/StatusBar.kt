@@ -10,8 +10,10 @@ import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.provider.Settings
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.Icon
@@ -19,33 +21,58 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 
 @Composable
 fun StatusBar(
-    modifier: Modifier = Modifier,
-    isDarkTheme: Boolean = false
+    modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val color = if (isDarkTheme) Color.White else Color.Black
 
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
+            .padding(horizontal = 16.dp, vertical = 4.dp),
         horizontalArrangement = Arrangement.End,
         verticalAlignment = Alignment.CenterVertically
     ) {
         // Solo iconos de conectividad (BT y WiFi)
-        BluetoothSection(color = color, context = context)
+        BluetoothSection(context = context)
         Spacer(modifier = Modifier.width(12.dp))
-        WifiSection(color = color, context = context)
+        WifiSection(context = context)
+    }
+}
+
+/**
+ * Componente base para los iconos de la barra de estado con fondo circular.
+ */
+@Composable
+fun StatusIcon(
+    imageVector: ImageVector,
+    contentDescription: String,
+    onClick: () -> Unit,
+    isEnabled: Boolean = true
+) {
+    Box(
+        modifier = Modifier
+            .size(32.dp)
+            .background(Color.White, shape = CircleShape)
+            .clickable { onClick() },
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            imageVector = imageVector,
+            contentDescription = contentDescription,
+            tint = if (isEnabled) Color.Black else Color.Black.copy(alpha = 0.3f),
+            modifier = Modifier.size(18.dp)
+        )
     }
 }
 
 @Composable
-fun BluetoothSection(color: Color, context: Context) {
+fun BluetoothSection(context: Context) {
     val bluetoothAdapter = remember { 
         val manager = context.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
         manager.adapter
@@ -68,23 +95,21 @@ fun BluetoothSection(color: Color, context: Context) {
     }
 
     if (bluetoothAdapter != null) {
-        Icon(
+        StatusIcon(
             imageVector = if (isBluetoothEnabled) Icons.Default.Bluetooth else Icons.Default.BluetoothDisabled,
             contentDescription = "Bluetooth",
-            tint = if (isBluetoothEnabled) color else color.copy(alpha = 0.4f),
-            modifier = Modifier
-                .size(20.dp)
-                .clickable {
-                    context.startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS).apply {
-                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    })
-                }
+            isEnabled = isBluetoothEnabled,
+            onClick = {
+                context.startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                })
+            }
         )
     }
 }
 
 @Composable
-fun WifiSection(color: Color, context: Context) {
+fun WifiSection(context: Context) {
     val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
     var isWifiEnabled by remember { mutableStateOf(false) }
 
@@ -110,16 +135,14 @@ fun WifiSection(color: Color, context: Context) {
         }
     }
 
-    Icon(
+    StatusIcon(
         imageVector = if (isWifiEnabled) Icons.Default.Wifi else Icons.Default.WifiOff,
         contentDescription = "WiFi",
-        tint = color,
-        modifier = Modifier
-            .size(20.dp)
-            .clickable {
-                context.startActivity(Intent(Settings.ACTION_WIFI_SETTINGS).apply {
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                })
-            }
+        isEnabled = isWifiEnabled,
+        onClick = {
+            context.startActivity(Intent(Settings.ACTION_WIFI_SETTINGS).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            })
+        }
     )
 }

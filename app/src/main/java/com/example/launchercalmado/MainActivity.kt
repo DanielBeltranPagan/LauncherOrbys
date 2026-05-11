@@ -50,14 +50,18 @@ import com.example.launchercalmado.ui.components.StatusBar
 
 class MainActivity : ComponentActivity() {
 
+    // --- Estados de la Interfaz ---
     private var mostrarMenuContextual by mutableStateOf(false)
     private var posicionToque by mutableStateOf(Offset.Zero)
     private var uriImagenFondo by mutableStateOf<Uri?>(null)
     private var colorSolido by mutableStateOf<Color?>(null)
     private var esTemaClaro by mutableStateOf(true)
+    private var showingPermissionDialog = false
 
+    // --- Receptores de Eventos ---
     private val receptorBarra = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
+            // Cerramos menús abiertos cuando se interactúa con la barra
             when (intent?.getStringExtra("comando")) {
                 "HOME", "BACK", "GOOGLE", "FILES", "RECENTS", "APPS" -> cerrarTodo()
             }
@@ -66,25 +70,38 @@ class MainActivity : ComponentActivity() {
 
     private val receptorWallpaper = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
+            // Resetear fondo personalizado si el sistema cambia el wallpaper
             uriImagenFondo = null
             colorSolido = null
             guardarPreferencias("", true)
         }
     }
 
+    // --- Métodos de Ciclo de Vida ---
     @OptIn(ExperimentalFoundationApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        
+        // Quitar animaciones de entrada
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            overrideActivityTransition(OVERRIDE_TRANSITION_OPEN, 0, 0)
+        } else {
+            @Suppress("DEPRECATION")
+            overridePendingTransition(0, 0)
+        }
+        
         cargarPreferencias()
         
+        // Configuración visual: pantalla completa y transparencia
         WindowCompat.setDecorFitsSystemWindows(window, false)
         window.setBackgroundDrawableResource(android.R.color.transparent)
-        
         hideStatusBar()
 
+        // Registro de receptores
         ContextCompat.registerReceiver(this, receptorBarra, IntentFilter("ACCION_BARRA"), ContextCompat.RECEIVER_EXPORTED)
         registerReceiver(receptorWallpaper, IntentFilter(Intent.ACTION_WALLPAPER_CHANGED))
         
+        // Escucha de cambios en colores del wallpaper (Android 8.1+)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
             val wm = WallpaperManager.getInstance(this)
             wm.addOnColorsChangedListener({ colors, _ ->
@@ -111,44 +128,62 @@ class MainActivity : ComponentActivity() {
                             },
                         color = colorSolido ?: Color.Transparent
                     ) {
-                        // Fondo personalizado si existe
-                        uriImagenFondo?.let { uri ->
-                            val bitmap = remember(uri) { 
-                                try {
-                                    val inputStream = contentResolver.openInputStream(uri)
-                                    BitmapFactory.decodeStream(inputStream)
-                                } catch (e: Exception) { null }
-                            }
-                            bitmap?.let {
-                                Image(
-                                    bitmap = it.asImageBitmap(),
-                                    contentDescription = null,
-                                    modifier = Modifier.fillMaxSize(),
-                                    contentScale = ContentScale.Crop
-                                )
-                            }
-                        }
-
-                        Column(modifier = Modifier.fillMaxSize()) {
-                            StatusBar(
-                                isDarkTheme = !esTemaClaro,
-                                modifier = Modifier.statusBarsPadding()
-                            )
-                            
-                            BoxWithConstraints(modifier = Modifier.weight(1f)) {
-                                if (mostrarMenuContextual) {
-                                    MenuContextual(
-                                        posicion = posicionToque,
-                                        onPersonalizarClick = {
-                                            abrirWallpaperStyleSistema()
-                                            mostrarMenuContextual = false
-                                        },
-                                        onDismiss = { mostrarMenuContextual = false }
-                                    )
-                                }
-                            }
-                        }
+                        ContenidoPrincipal()
                     }
+                }
+            }
+        }
+    }
+
+    @Composable
+    private fun ContenidoPrincipal() {
+        // Fondo personalizado si existe
+        uriImagenFondo?.let { uri ->
+            val bitmap = remember(uri) { 
+                try {
+                    val inputStream = contentResolver.openInputStream(uri)
+                    BitmapFactory.decodeStream(inputStream)
+                } catch (e: Exception) { null }
+            }
+            bitmap?.let {
+                Image(
+                    bitmap = it.asImageBitmap(),
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop
+                )
+            }
+        }
+
+        Box(modifier = Modifier.fillMaxSize()) {
+            // Fondo personalizado si existe
+            uriImagenFondo?.let { uri ->
+                val bitmap = remember(uri) { 
+                    try {
+                        val inputStream = contentResolver.openInputStream(uri)
+                        BitmapFactory.decodeStream(inputStream)
+                    } catch (e: Exception) { null }
+                }
+                bitmap?.let {
+                    Image(
+                        bitmap = it.asImageBitmap(),
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
+                    )
+                }
+            }
+
+            BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+                if (mostrarMenuContextual) {
+                    MenuContextual(
+                        posicion = posicionToque,
+                        onPersonalizarClick = {
+                            abrirWallpaperStyleSistema()
+                            mostrarMenuContextual = false
+                        },
+                        onDismiss = { mostrarMenuContextual = false }
+                    )
                 }
             }
         }
@@ -211,6 +246,61 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    // --- Lógica de Permisos y Sistema ---
+    private fun checkAndStartService() {
+        if (showingPermissionDialog) return
+        
+        if (!isDefaultLauncher()) {
+            mostrarDialogoPredeterminado()
+            return
+        }
+
+        val hasOverlay = Settings.canDrawOverlays(this)
+        val hasAccessibility = isAccessibilityServiceEnabled()
+
+        if (!hasOverlay) { 
+            showingPermissionDialog = true
+            startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName"))) 
+        } else if (!hasAccessibility) { 
+            showingPermissionDialog = true
+            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) 
+        }
+    }
+
+    private fun mostrarDialogoPredeterminado() {
+        showingPermissionDialog = true
+        AlertDialog.Builder(this)
+            .setTitle("Configurar Launcher")
+            .setMessage("Establécelo como predeterminado para mejor estabilidad.")
+            .setPositiveButton("Configurar") { _, _ -> 
+                showingPermissionDialog = false
+                startActivity(Intent(Settings.ACTION_HOME_SETTINGS)) 
+            }
+            .setNegativeButton("Más tarde") { _, _ -> 
+                showingPermissionDialog = false 
+            }
+            .show()
+    }
+
+    private fun isDefaultLauncher(): Boolean {
+        val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
+        val resolveInfo = packageManager.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY)
+        return resolveInfo?.activityInfo?.packageName == packageName
+    }
+
+    private fun isAccessibilityServiceEnabled(): Boolean {
+        val expected = ComponentName(this, AccesibilidadService::class.java).flattenToString()
+        val enabled = Settings.Secure.getString(contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES) ?: return false
+        return enabled.split(':').any { it.equals(expected, ignoreCase = true) }
+    }
+
+    private fun hideStatusBar() {
+        val windowInsetsController = WindowCompat.getInsetsController(window, window.decorView)
+        windowInsetsController.systemBarsBehavior = 
+            WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        windowInsetsController.hide(WindowInsetsCompat.Type.systemBars())
+    }
+
     private fun cerrarTodo() {
         mostrarMenuContextual = false
     }
@@ -222,11 +312,6 @@ class MainActivity : ComponentActivity() {
             } else true
             notificarCambioTema()
         }
-    }
-
-    override fun onBackPressed() {
-        if (mostrarMenuContextual) mostrarMenuContextual = false
-        else super.onBackPressed()
     }
 
     private fun notificarCambioTema() {
@@ -245,57 +330,46 @@ class MainActivity : ComponentActivity() {
         val fondoStr = prefs.getString("fondo", null)
         esTemaClaro = prefs.getBoolean("esClaro", true)
         if (fondoStr != null && fondoStr.isNotEmpty()) {
-            if (fondoStr.startsWith("content://")) { uriImagenFondo = Uri.parse(fondoStr); colorSolido = null }
-            else { try { colorSolido = Color(fondoStr.toULong()) } catch (e: Exception) {} }
+            if (fondoStr.startsWith("content://")) { 
+                uriImagenFondo = Uri.parse(fondoStr)
+                colorSolido = null 
+            } else { 
+                try { colorSolido = Color(fondoStr.toULong()) } catch (e: Exception) {} 
+            }
         }
     }
 
     override fun onResume() { 
         super.onResume()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            overrideActivityTransition(OVERRIDE_TRANSITION_OPEN, 0, 0)
+        } else {
+            @Suppress("DEPRECATION")
+            overridePendingTransition(0, 0)
+        }
         hideStatusBar()
         checkAndStartService() 
     }
 
-    private fun hideStatusBar() {
-        val windowInsetsController = WindowCompat.getInsetsController(window, window.decorView)
-        windowInsetsController.systemBarsBehavior = 
-            WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-        windowInsetsController.hide(WindowInsetsCompat.Type.systemBars())
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            overrideActivityTransition(OVERRIDE_TRANSITION_OPEN, 0, 0)
+        } else {
+            @Suppress("DEPRECATION")
+            overridePendingTransition(0, 0)
+        }
+    }
+
+    override fun onBackPressed() {
+        if (mostrarMenuContextual) mostrarMenuContextual = false
+        else super.onBackPressed()
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
-        if (hasFocus) {
-            hideStatusBar()
-        }
-    }
-
-    private fun checkAndStartService() {
-        if (showingPermissionDialog) return
-        if (!isDefaultLauncher()) {
-            showingPermissionDialog = true
-            AlertDialog.Builder(this).setTitle("Configurar Launcher").setMessage("Establécelo como predeterminado para mejor estabilidad.")
-                .setPositiveButton("Configurar") { _, _ -> showingPermissionDialog = false; startActivity(Intent(Settings.ACTION_HOME_SETTINGS)) }
-                .setNegativeButton("Más tarde") { _, _ -> showingPermissionDialog = false }.show()
-            return
-        }
-        val hasOverlay = Settings.canDrawOverlays(this)
-        val hasAccessibility = isAccessibilityServiceEnabled()
-        if (!hasOverlay) { showingPermissionDialog = true; startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName"))) }
-        else if (!hasAccessibility) { showingPermissionDialog = true; startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
-    }
-
-    private var showingPermissionDialog = false
-    private fun isDefaultLauncher(): Boolean {
-        val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
-        val resolveInfo = packageManager.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY)
-        return resolveInfo?.activityInfo?.packageName == packageName
-    }
-
-    private fun isAccessibilityServiceEnabled(): Boolean {
-        val expected = ComponentName(this, AccesibilidadService::class.java).flattenToString()
-        val enabled = Settings.Secure.getString(contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES) ?: return false
-        return enabled.split(':').any { it.equals(expected, ignoreCase = true) }
+        if (hasFocus) hideStatusBar()
     }
 
     override fun onDestroy() { 

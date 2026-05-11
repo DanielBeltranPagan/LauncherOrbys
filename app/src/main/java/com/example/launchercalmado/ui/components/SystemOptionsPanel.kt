@@ -3,6 +3,7 @@ package com.example.launchercalmado.ui.components
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -19,15 +20,20 @@ fun SystemOptionsPanel(
     onWifiClick: () -> Unit,
     onBluetoothClick: () -> Unit,
     onAirplaneModeClick: () -> Unit,
+    currentBrightness: Float,
+    onBrightnessChange: (Float) -> Unit,
+    currentVolume: Float,
+    onVolumeChange: (Float) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    // Tarjeta principal del panel
     Card(
         modifier = modifier
             .width(280.dp)
             .padding(16.dp),
         shape = RoundedCornerShape(28.dp),
         colors = CardDefaults.cardColors(
-            containerColor = Color.Black.copy(alpha = 0.9f)
+            containerColor = Color.Black.copy(alpha = 0.9f) // Fondo negro semi-transparente
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = 12.dp)
     ) {
@@ -43,7 +49,39 @@ fun SystemOptionsPanel(
                 fontWeight = FontWeight.Bold
             )
 
-            // Accesos Rápidos en una rejilla simple
+            // --- SECCIÓN DE CONTROLES DESLIZANTES ---
+            Column(modifier = Modifier.fillMaxWidth()) {
+                // Control de Brillo
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.BrightnessMedium, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
+                    Slider(
+                        value = currentBrightness,
+                        onValueChange = onBrightnessChange,
+                        modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
+                        colors = SliderDefaults.colors(
+                            thumbColor = Color.White,
+                            activeTrackColor = Color.White,
+                            inactiveTrackColor = Color.White.copy(alpha = 0.3f)
+                        )
+                    )
+                }
+                // Control de Volumen
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.AutoMirrored.Filled.VolumeUp, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
+                    Slider(
+                        value = currentVolume,
+                        onValueChange = onVolumeChange,
+                        modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
+                        colors = SliderDefaults.colors(
+                            thumbColor = Color.White,
+                            activeTrackColor = Color.White,
+                            inactiveTrackColor = Color.White.copy(alpha = 0.3f)
+                        )
+                    )
+                }
+            }
+
+            // --- SECCIÓN DE ACCESOS RÁPIDOS (BOTONES) ---
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceEvenly
@@ -62,6 +100,9 @@ fun SystemOptionsPanel(
     }
 }
 
+/**
+ * Componente reutilizable para los botones circulares del panel
+ */
 @Composable
 fun QuickActionButton(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
@@ -76,8 +117,8 @@ fun QuickActionButton(
         FilledIconButton(
             onClick = onClick,
             colors = IconButtonDefaults.filledIconButtonColors(
-                containerColor = Color.White.copy(alpha = 0.15f),
-                contentColor = Color.White
+                containerColor = Color.White,
+                contentColor = Color.Black
             ),
             modifier = Modifier.size(56.dp)
         ) {

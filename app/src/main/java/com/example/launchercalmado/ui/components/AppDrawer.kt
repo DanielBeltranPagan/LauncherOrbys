@@ -23,13 +23,20 @@ import androidx.core.graphics.drawable.toBitmap
 import com.example.launchercalmado.logic.AppLoader
 import com.example.launchercalmado.receivers.PackageReceiver
 
+/**
+ * Componente que muestra el cajón de aplicaciones en una cuadrícula.
+ */
 @Composable
 fun AppDrawer() {
     val context = LocalContext.current
+    // Cargamos la lista de apps instaladas
     var apps by remember { mutableStateOf(AppLoader(context).loadInstalledApps()) }
 
+    // Registramos un receptor para actualizar la lista si se instalan/desinstalan apps
     DisposableEffect(Unit) {
-        val receiver = PackageReceiver { apps = AppLoader(context).loadInstalledApps() }
+        val receiver = PackageReceiver { 
+            apps = AppLoader(context).loadInstalledApps() 
+        }
         val filter = IntentFilter().apply {
             addAction(Intent.ACTION_PACKAGE_ADDED)
             addAction(Intent.ACTION_PACKAGE_REMOVED)
@@ -49,11 +56,12 @@ fun AppDrawer() {
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
-                "Aplicaciones",
+                text = "Aplicaciones",
                 color = Color.White,
                 fontSize = 18.sp,
                 modifier = Modifier.padding(bottom = 12.dp, start = 8.dp)
             )
+            
             LazyVerticalGrid(
                 columns = GridCells.Adaptive(75.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -67,9 +75,13 @@ fun AppDrawer() {
     }
 }
 
+/**
+ * Representación individual de una aplicación en el cajón.
+ */
 @Composable
 fun AppItem(app: com.example.launchercalmado.data.AppInfo) {
     val context = LocalContext.current
+    
     Column(
         modifier = Modifier
             .clickable {
