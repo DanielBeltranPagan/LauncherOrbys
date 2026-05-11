@@ -76,6 +76,7 @@ class AccesibilidadService : AccessibilityService(), SavedStateRegistryOwner, Li
     // --- Estados del Panel de Sistema ---
     private var systemOptionsVisible by mutableStateOf(false)
     private var currentBrightness by mutableStateOf(0.5f)
+    private var isAutoBrightness by mutableStateOf(false)
     private var currentVolume by mutableStateOf(0.5f)
     private lateinit var audioManager: AudioManager
 
@@ -97,17 +98,21 @@ class AccesibilidadService : AccessibilityService(), SavedStateRegistryOwner, Li
         }
     }
 
+    /**
+     * Recibe y procesa comandos enviados desde otros componentes (como la barra de navegación)
+     */
     private fun manejarComando(comando: String?) {
         when (comando) {
             "BACK" -> {
+                // Si el cajón de apps está abierto, lo cierra. Si no, va atrás en el sistema.
                 if (drawerVisible) toggleDrawer()
                 else performGlobalAction(GLOBAL_ACTION_BACK)
             }
             "HOME" -> {
                 if (drawerVisible) toggleDrawer()
-                // Enviamos la acción de HOME al sistema
+                // Ejecuta la acción de ir a la pantalla de inicio
                 performGlobalAction(GLOBAL_ACTION_HOME)
-                // Y forzamos el inicio de nuestra actividad sin animación para asegurar que sea instantáneo
+                // Asegura que nuestra actividad principal se abra instantáneamente
                 val intent = Intent(Intent.ACTION_MAIN).apply {
                     addCategory(Intent.CATEGORY_HOME)
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION)
@@ -117,16 +122,20 @@ class AccesibilidadService : AccessibilityService(), SavedStateRegistryOwner, Li
             "RECENTS" -> {
                 if (drawerVisible) toggleDrawer()
                 if (systemOptionsVisible) toggleSystemOptions()
+                // Muestra la pantalla de aplicaciones recientes
                 performGlobalAction(GLOBAL_ACTION_RECENTS)
             }
-            "APPS" -> toggleDrawer()
-            "SYSTEM_OPTIONS" -> toggleSystemOptions()
+            "APPS" -> toggleDrawer() // Abre o cierra el cajón de aplicaciones
+            "SYSTEM_OPTIONS" -> toggleSystemOptions() // Abre o cierra el panel de ajustes rápidos
         }
     }
 
+    /**
+     * Abre o cierra el panel de ajustes rápidos (brillo, volumen, etc.)
+     */
     private fun toggleSystemOptions() {
         if (!systemOptionsVisible) {
-            actualizarValoresSistema()
+            actualizarValoresSistema() // Lee el brillo y volumen actual antes de mostrar el panel
             systemOptionsVisible = true
             val params = WindowManager.LayoutParams(
                 WindowManager.LayoutParams.MATCH_PARENT,
@@ -135,8 +144,9 @@ class AccesibilidadService : AccessibilityService(), SavedStateRegistryOwner, Li
                 WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
                 PixelFormat.TRANSLUCENT
             )
-            windowManager.addView(vistaSystemOptions, params)
+            windowManager.addView(vistaSystemOptions, params) // Añade la vista a la pantalla
         } else {
+            // Si ya está visible, lo quita
             if (::vistaSystemOptions.isInitialized && vistaSystemOptions.parent != null) {
                 windowManager.removeView(vistaSystemOptions)
             }
@@ -144,23 +154,57 @@ class AccesibilidadService : AccessibilityService(), SavedStateRegistryOwner, Li
         }
     }
 
+    /**
+     * Lee el volumen y el brillo actuales del sistema para que el menú esté sincronizado
+     */
     private fun actualizarValoresSistema() {
-        // Volumen
+        // Lee el volumen multimedia actual
         val maxVol = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
         if (maxVol > 0) {
             val curVol = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
             currentVolume = curVol.toFloat() / maxVol
         }
 
-        // Brillo
+        // Lee el nivel de brillo y si el modo automático está activado
         try {
             val curBright = Settings.System.getInt(contentResolver, Settings.System.SCREEN_BRIGHTNESS)
             currentBrightness = curBright.toFloat() / 255f
+            
+            val mode = Settings.System.getInt(contentResolver, Settings.System.SCREEN_BRIGHTNESS_MODE)
+            isAutoBrightness = mode == Settings.System.SCREEN_BRIGHTNESS_MODE_AUTOMATIC
         } catch (e: Exception) {
             currentBrightness = 0.5f
+            isAutoBrightness = false
         }
     }
 
+    /**
+     * Activa o desactiva el sensor de luz (Brillo Automático)
+     */
+    private fun cambiarModoBrillo(auto: Boolean) {
+        if (Settings.System.canWrite(this)) {
+            val modo = if (auto) Settings.System.SCREEN_BRIGHTNESS_MODE_AUTOMATIC else Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL
+            Settings.System.putInt(contentResolver, Settings.System.SCREEN_BRIGHTNESS_MODE, modo)
+            isAutoBrightness = auto
+        } else {
+            solicitarPermisoEscritura()
+        }
+    }
+
+    /**
+     * Pide permiso al usuario para modificar los ajustes del sistema (necesario para el brillo)
+     */
+    private fun solicitarPermisoEscritura() {
+        val intent = Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS)
+        intent.data = Uri.parse("package:$packageName")
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        startActivity(intent)
+        Toast.makeText(this, "Concede permiso para cambiar los ajustes", Toast.LENGTH_SHORT).show()
+    }
+
+    /**
+     * Cambia el volumen del teléfono según la barrita del menú
+     */
     private fun cambiarVolumen(valor: Float) {
         val maxVol = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
         val newVol = (valor * maxVol).toInt()
@@ -168,23 +212,25 @@ class AccesibilidadService : AccessibilityService(), SavedStateRegistryOwner, Li
         currentVolume = valor
     }
 
+    /**
+     * Cambia el brillo de la pantalla (solo funciona si el modo automático está apagado)
+     */
     private fun cambiarBrillo(valor: Float) {
         if (Settings.System.canWrite(this)) {
             val newBright = (valor * 255).toInt()
             Settings.System.putInt(contentResolver, Settings.System.SCREEN_BRIGHTNESS, newBright)
             currentBrightness = valor
         } else {
-            val intent = Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS)
-            intent.data = Uri.parse("package:$packageName")
-            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            startActivity(intent)
-            Toast.makeText(this, "Concede permiso para cambiar el brillo", Toast.LENGTH_SHORT).show()
+            solicitarPermisoEscritura()
         }
     }
 
+    /**
+     * Muestra u oculta la lista completa de aplicaciones instaladas
+     */
     private fun toggleDrawer() {
         if (!drawerVisible) {
-            appsList = getInstalledApps()
+            appsList = getInstalledApps() // Carga la lista de apps antes de abrir
             drawerVisible = true
             val params = WindowManager.LayoutParams(
                 WindowManager.LayoutParams.MATCH_PARENT,
@@ -199,7 +245,7 @@ class AccesibilidadService : AccessibilityService(), SavedStateRegistryOwner, Li
                 windowManager.removeView(vistaDrawer)
             }
             drawerVisible = false
-            searchQuery = ""
+            searchQuery = "" // Limpia la búsqueda al cerrar
         }
     }
 
@@ -369,6 +415,8 @@ class AccesibilidadService : AccessibilityService(), SavedStateRegistryOwner, Li
                             },
                             currentBrightness = currentBrightness,
                             onBrightnessChange = { cambiarBrillo(it) },
+                            isAutoBrightness = isAutoBrightness,
+                            onAutoBrightnessChange = { cambiarModoBrillo(it) },
                             currentVolume = currentVolume,
                             onVolumeChange = { cambiarVolumen(it) },
                             modifier = Modifier

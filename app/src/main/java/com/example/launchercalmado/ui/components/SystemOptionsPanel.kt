@@ -14,6 +14,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
+/**
+ * Panel visual que contiene los controles de brillo, volumen y accesos rápidos
+ */
 @Composable
 fun SystemOptionsPanel(
     onSettingsClick: () -> Unit,
@@ -22,6 +25,8 @@ fun SystemOptionsPanel(
     onAirplaneModeClick: () -> Unit,
     currentBrightness: Float,
     onBrightnessChange: (Float) -> Unit,
+    isAutoBrightness: Boolean,
+    onAutoBrightnessChange: (Boolean) -> Unit,
     currentVolume: Float,
     onVolumeChange: (Float) -> Unit,
     modifier: Modifier = Modifier
@@ -50,6 +55,7 @@ fun SystemOptionsPanel(
             )
 
             // --- SECCIÓN DE CONTROLES DESLIZANTES ---
+            // Aquí dibujamos las barras de Brillo y Volumen
             Column(modifier = Modifier.fillMaxWidth()) {
                 // Control de Brillo
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -57,13 +63,28 @@ fun SystemOptionsPanel(
                     Slider(
                         value = currentBrightness,
                         onValueChange = onBrightnessChange,
+                        enabled = !isAutoBrightness, // Desactiva la barra si el brillo automático está encendido
                         modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
                         colors = SliderDefaults.colors(
                             thumbColor = Color.White,
                             activeTrackColor = Color.White,
-                            inactiveTrackColor = Color.White.copy(alpha = 0.3f)
+                            inactiveTrackColor = Color.White.copy(alpha = 0.3f),
+                            disabledThumbColor = Color.Gray,
+                            disabledActiveTrackColor = Color.Gray
                         )
                     )
+                    // Botón para activar/desactivar el Brillo Automático
+                    IconButton(
+                        onClick = { onAutoBrightnessChange(!isAutoBrightness) },
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Text(
+                            text = "A",
+                            color = if (isAutoBrightness) Color.Cyan else Color.White, // Cian si está activo
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp
+                        )
+                    }
                 }
                 // Control de Volumen
                 Row(verticalAlignment = Alignment.CenterVertically) {

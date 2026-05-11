@@ -39,6 +39,7 @@ class ServicioBarra : LifecycleService(), SavedStateRegistryOwner {
     // --- Estados reactivos para la UI ---
     private var systemOptionsVisible by mutableStateOf(false)
     private var currentBrightness by mutableStateOf(0.5f)
+    private var isAutoBrightness by mutableStateOf(false)
     private var currentVolume by mutableStateOf(0.5f)
     private lateinit var audioManager: AudioManager
 
@@ -170,6 +171,8 @@ class ServicioBarra : LifecycleService(), SavedStateRegistryOwner {
                             },
                             currentBrightness = currentBrightness,
                             onBrightnessChange = { cambiarBrillo(it) },
+                            isAutoBrightness = isAutoBrightness,
+                            onAutoBrightnessChange = { cambiarModoBrillo(it) },
                             currentVolume = currentVolume,
                             onVolumeChange = { cambiarVolumen(it) },
                             modifier = Modifier
@@ -197,9 +200,34 @@ class ServicioBarra : LifecycleService(), SavedStateRegistryOwner {
         try {
             val curBright = Settings.System.getInt(contentResolver, Settings.System.SCREEN_BRIGHTNESS)
             currentBrightness = curBright.toFloat() / 255f
+            
+            val mode = Settings.System.getInt(contentResolver, Settings.System.SCREEN_BRIGHTNESS_MODE)
+            isAutoBrightness = mode == Settings.System.SCREEN_BRIGHTNESS_MODE_AUTOMATIC
         } catch (e: Exception) {
             currentBrightness = 0.5f
+            isAutoBrightness = false
         }
+    }
+
+    /**
+     * Alterna entre brillo automático y manual
+     */
+    private fun cambiarModoBrillo(auto: Boolean) {
+        if (Settings.System.canWrite(this)) {
+            val modo = if (auto) Settings.System.SCREEN_BRIGHTNESS_MODE_AUTOMATIC else Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL
+            Settings.System.putInt(contentResolver, Settings.System.SCREEN_BRIGHTNESS_MODE, modo)
+            isAutoBrightness = auto
+        } else {
+            solicitarPermisoEscritura()
+        }
+    }
+
+    private fun solicitarPermisoEscritura() {
+        val intent = Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS)
+        intent.data = Uri.parse("package:$packageName")
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        startActivity(intent)
+        Toast.makeText(this, "Concede permiso para cambiar los ajustes", Toast.LENGTH_SHORT).show()
     }
 
     /**
@@ -222,11 +250,7 @@ class ServicioBarra : LifecycleService(), SavedStateRegistryOwner {
             currentBrightness = valor
         } else {
             // Si no tiene permiso, abre la pantalla de ajustes del sistema para concederlo
-            val intent = Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS)
-            intent.data = Uri.parse("package:$packageName")
-            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            startActivity(intent)
-            Toast.makeText(this, "Concede permiso para cambiar el brillo", Toast.LENGTH_SHORT).show()
+            solicitarPermisoEscritura()
         }
     }
 
