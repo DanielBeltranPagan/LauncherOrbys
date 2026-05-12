@@ -77,6 +77,7 @@ class AccesibilidadService : AccessibilityService(), SavedStateRegistryOwner, Li
     private var systemOptionsVisible by mutableStateOf(false)
     private var currentBrightness by mutableStateOf(0.5f)
     private var isAutoBrightness by mutableStateOf(false)
+    private var isAirplaneModeOn by mutableStateOf(false)
     private var currentVolume by mutableStateOf(0.5f)
     private lateinit var audioManager: AudioManager
 
@@ -175,6 +176,31 @@ class AccesibilidadService : AccessibilityService(), SavedStateRegistryOwner, Li
         } catch (e: Exception) {
             currentBrightness = 0.5f
             isAutoBrightness = false
+        }
+
+        // Lee el estado del modo avión
+        try {
+            isAirplaneModeOn = Settings.Global.getInt(contentResolver, Settings.Global.AIRPLANE_MODE_ON, 0) != 0
+        } catch (e: Exception) {
+            isAirplaneModeOn = false
+        }
+    }
+
+    /**
+     * Intenta cambiar el modo avión directamente o abre los ajustes si no hay permiso
+     */
+    private fun toggleAirplaneMode() {
+        val nuevoEstado = if (isAirplaneModeOn) 0 else 1
+        try {
+            // Intento de cambio directo (Requiere permiso WRITE_SECURE_SETTINGS vía ADB)
+            Settings.Global.putInt(contentResolver, Settings.Global.AIRPLANE_MODE_ON, nuevoEstado)
+            isAirplaneModeOn = nuevoEstado != 0
+        } catch (e: SecurityException) {
+            // Si falla por falta de permisos, abrimos la pantalla de ajustes
+            val intent = Intent(Settings.ACTION_AIRPLANE_MODE_SETTINGS)
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION)
+            startActivity(intent)
+            toggleSystemOptions() // Cerramos el panel para ver el cambio
         }
     }
 
@@ -409,10 +435,8 @@ class AccesibilidadService : AccessibilityService(), SavedStateRegistryOwner, Li
                                 startActivity(Intent(android.provider.Settings.ACTION_BLUETOOTH_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION))
                                 toggleSystemOptions()
                             },
-                            onAirplaneModeClick = {
-                                startActivity(Intent(android.provider.Settings.ACTION_AIRPLANE_MODE_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION))
-                                toggleSystemOptions()
-                            },
+                            onAirplaneModeClick = { toggleAirplaneMode() },
+                            isAirplaneModeOn = isAirplaneModeOn,
                             currentBrightness = currentBrightness,
                             onBrightnessChange = { cambiarBrillo(it) },
                             isAutoBrightness = isAutoBrightness,

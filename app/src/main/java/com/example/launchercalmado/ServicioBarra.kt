@@ -40,6 +40,7 @@ class ServicioBarra : LifecycleService(), SavedStateRegistryOwner {
     private var systemOptionsVisible by mutableStateOf(false)
     private var currentBrightness by mutableStateOf(0.5f)
     private var isAutoBrightness by mutableStateOf(false)
+    private var isAirplaneModeOn by mutableStateOf(false)
     private var currentVolume by mutableStateOf(0.5f)
     private lateinit var audioManager: AudioManager
 
@@ -165,10 +166,8 @@ class ServicioBarra : LifecycleService(), SavedStateRegistryOwner {
                                 startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                                 toggleSystemOptions()
                             },
-                            onAirplaneModeClick = {
-                                startActivity(Intent(Settings.ACTION_AIRPLANE_MODE_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-                                toggleSystemOptions()
-                            },
+                            onAirplaneModeClick = { toggleAirplaneMode() },
+                            isAirplaneModeOn = isAirplaneModeOn,
                             currentBrightness = currentBrightness,
                             onBrightnessChange = { cambiarBrillo(it) },
                             isAutoBrightness = isAutoBrightness,
@@ -206,6 +205,29 @@ class ServicioBarra : LifecycleService(), SavedStateRegistryOwner {
         } catch (e: Exception) {
             currentBrightness = 0.5f
             isAutoBrightness = false
+        }
+
+        // Obtener estado del Modo Avión
+        try {
+            isAirplaneModeOn = Settings.Global.getInt(contentResolver, Settings.Global.AIRPLANE_MODE_ON, 0) != 0
+        } catch (e: Exception) {
+            isAirplaneModeOn = false
+        }
+    }
+
+    /**
+     * Alterna el modo avión si tiene permisos, o abre los ajustes
+     */
+    private fun toggleAirplaneMode() {
+        val nuevoEstado = if (isAirplaneModeOn) 0 else 1
+        try {
+            Settings.Global.putInt(contentResolver, Settings.Global.AIRPLANE_MODE_ON, nuevoEstado)
+            isAirplaneModeOn = nuevoEstado != 0
+        } catch (e: SecurityException) {
+            val intent = Intent(Settings.ACTION_AIRPLANE_MODE_SETTINGS)
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            startActivity(intent)
+            toggleSystemOptions()
         }
     }
 

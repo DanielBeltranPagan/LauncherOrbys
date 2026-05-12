@@ -23,6 +23,7 @@ fun SystemOptionsPanel(
     onWifiClick: () -> Unit,
     onBluetoothClick: () -> Unit,
     onAirplaneModeClick: () -> Unit,
+    isAirplaneModeOn: Boolean,
     currentBrightness: Float,
     onBrightnessChange: (Float) -> Unit,
     isAutoBrightness: Boolean,
@@ -114,7 +115,12 @@ fun SystemOptionsPanel(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceEvenly
             ) {
-                QuickActionButton(Icons.Default.AirplanemodeActive, "Avión", onAirplaneModeClick)
+                QuickActionButton(
+                    icon = Icons.Default.AirplanemodeActive,
+                    label = "Avión",
+                    onClick = onAirplaneModeClick,
+                    isActive = isAirplaneModeOn // El botón se iluminará si está activo
+                )
                 QuickActionButton(Icons.Default.Settings, "Ajustes", onSettingsClick)
             }
         }
@@ -128,7 +134,8 @@ fun SystemOptionsPanel(
 fun QuickActionButton(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     label: String,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    isActive: Boolean = false // Nuevo parámetro para saber si el botón está "encendido"
 ) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -138,7 +145,7 @@ fun QuickActionButton(
         FilledIconButton(
             onClick = onClick,
             colors = IconButtonDefaults.filledIconButtonColors(
-                containerColor = Color.White,
+                containerColor = if (isActive) Color.Cyan else Color.White, // Cambia a cian si está activo
                 contentColor = Color.Black
             ),
             modifier = Modifier.size(56.dp)
