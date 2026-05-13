@@ -1,7 +1,11 @@
 package com.example.launcherorbys.ui.components
 
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
@@ -9,6 +13,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
@@ -21,26 +26,29 @@ import java.util.*
 /**
  * Barra de navegación personalizada del launcher.
  * Incluye controles de navegación del sistema, accesos rápidos y un reloj.
+ * Puede contraerse a un tirador central de mayor tamaño.
  */
 @Composable
 fun NavBar(
     onActionClicked: (String) -> Unit,
     iconColor: Color = Color.White,
-    backgroundColor: Color = Color.Black
+    backgroundColor: Color = Color.Black,
+    isAtTop: Boolean = false,
+    isExpanded: Boolean = true
 ) {
-    // Formateador para la hora forzado a la zona horaria de España (Europe/Madrid)
+    val height by animateDpAsState(targetValue = if (isExpanded) 48.dp else 20.dp, label = "navHeight")
+    val contentAlpha by animateFloatAsState(targetValue = if (isExpanded) 1f else 0f, label = "contentAlpha")
+    
     val timeFormatter = remember { 
         SimpleDateFormat("HH:mm", Locale.getDefault()).apply {
             timeZone = TimeZone.getTimeZone("Europe/Madrid")
         }
     }
     
-    // Estado reactivo para la hora actual
     var currentTime by remember { 
         mutableStateOf(timeFormatter.format(Date())) 
     }
 
-    // Bucle que actualiza la hora cada segundo mientras el componente esté activo
     LaunchedEffect(Unit) {
         while (true) {
             currentTime = timeFormatter.format(Date())
@@ -48,62 +56,93 @@ fun NavBar(
         }
     }
 
-    Surface(
-        color = backgroundColor,
-        modifier = Modifier.fillMaxSize()
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(height),
+        contentAlignment = if (isAtTop) Alignment.TopCenter else Alignment.BottomCenter
     ) {
-        Box(modifier = Modifier.fillMaxSize()) {
-            // Fila central con los iconos de navegación y accesos rápidos
-            Row(
-                modifier = Modifier.fillMaxSize(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.Center
-            ) {
-                NavBarIcon(Icons.AutoMirrored.Filled.ArrowBack, iconColor) { onActionClicked("BACK") }
-                Spacer(modifier = Modifier.width(15.dp))
-                NavBarIcon(Icons.Default.Home, iconColor) { onActionClicked("HOME") }
-                Spacer(modifier = Modifier.width(15.dp))
-                NavBarIcon(Icons.Default.CropSquare, iconColor) { onActionClicked("RECENTS") }
-                Spacer(modifier = Modifier.width(15.dp))
-                NavBarIcon(Icons.Default.Apps, iconColor) { onActionClicked("APPS") }
-                Spacer(modifier = Modifier.width(15.dp))
-                NavBarIcon(Icons.Default.Search, iconColor) { onActionClicked("GOOGLE") }
-                Spacer(modifier = Modifier.width(15.dp))
-                NavBarIcon(Icons.Default.Folder, iconColor) { onActionClicked("FILES") }
-                Spacer(modifier = Modifier.width(15.dp))
-                NavBarIcon(Icons.Default.Tune, iconColor) { onActionClicked("SYSTEM_OPTIONS") }
-            }
+        // Fondo principal (recto para que llegue a los bordes)
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .alpha(contentAlpha)
+                .background(color = backgroundColor.copy(alpha = 0.95f))
+        )
 
-            // Reloj en el lateral izquierdo
-            Box(
-                modifier = Modifier
-                    .fillMaxHeight()
-                    .align(Alignment.CenterStart)
-                    .padding(start = 16.dp)
-                    .clickable { onActionClicked("CLOCK") },
-                contentAlignment = Alignment.Center
+        if (isExpanded) {
+            // Contenido de la barra
+            Row(
+                modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
+                // Reloj
                 Text(
                     text = currentTime,
                     color = iconColor,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.clickable { onActionClicked("CLOCK") }
                 )
+
+                // Iconos centrales
+                Row(
+                    modifier = Modifier.weight(1f),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    NavBarIcon(Icons.AutoMirrored.Filled.ArrowBack, iconColor) { onActionClicked("BACK") }
+                    Spacer(modifier = Modifier.width(12.dp))
+                    NavBarIcon(Icons.Default.Home, iconColor) { onActionClicked("HOME") }
+                    Spacer(modifier = Modifier.width(12.dp))
+                    NavBarIcon(Icons.Default.CropSquare, iconColor) { onActionClicked("RECENTS") }
+                    Spacer(modifier = Modifier.width(12.dp))
+                    NavBarIcon(Icons.Default.Apps, iconColor) { onActionClicked("APPS") }
+                    Spacer(modifier = Modifier.width(12.dp))
+                    NavBarIcon(Icons.Default.Search, iconColor) { onActionClicked("GOOGLE") }
+                    Spacer(modifier = Modifier.width(12.dp))
+                    NavBarIcon(Icons.Default.Folder, iconColor) { onActionClicked("FILES") }
+                    Spacer(modifier = Modifier.width(12.dp))
+                    NavBarIcon(Icons.Default.Tune, iconColor) { onActionClicked("SYSTEM_OPTIONS") }
+                }
+
+                // Controles derechos
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    NavBarIcon(
+                        icon = if (isAtTop) Icons.Default.KeyboardArrowDown else Icons.Default.KeyboardArrowUp,
+                        color = iconColor
+                    ) { onActionClicked("TOGGLE_NAVBAR_POSITION") }
+                    
+                    IconButton(onClick = { onActionClicked("TOGGLE_NAVBAR_VISIBILITY") }) {
+                        Icon(Icons.Default.Remove, null, tint = iconColor, modifier = Modifier.size(30.dp))
+                    }
+                }
             }
+        } else {
+            // Tirador central más grande para facilitar la apertura
+            Box(
+                modifier = Modifier
+                    .width(120.dp)
+                    .height(12.dp)
+                    .padding(bottom = if (isAtTop) 0.dp else 4.dp, top = if (isAtTop) 4.dp else 0.dp)
+                    .background(
+                        color = iconColor.copy(alpha = 0.6f),
+                        shape = RoundedCornerShape(6.dp)
+                    )
+                    .clickable { onActionClicked("TOGGLE_NAVBAR_VISIBILITY") }
+                    .align(if (isAtTop) Alignment.TopCenter else Alignment.BottomCenter)
+            )
         }
     }
 }
 
-/**
- * Componente interno para estandarizar los iconos de la barra de navegación.
- */
 @Composable
 private fun NavBarIcon(
     icon: ImageVector,
     color: Color,
     onClick: () -> Unit
 ) {
-    IconButton(onClick = onClick) {
+    IconButton(onClick = onClick, modifier = Modifier.size(38.dp)) {
         Icon(
             imageVector = icon,
             contentDescription = null,

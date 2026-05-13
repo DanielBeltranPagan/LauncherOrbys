@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -66,7 +67,11 @@ class LauncherAccessibilityService : AccessibilityService(), SavedStateRegistryO
     private var navBarBackground by mutableStateOf(Color.Black)
     private var drawerVisible by mutableStateOf(false)
     private var systemOptionsVisible by mutableStateOf(false)
-    
+    private var navBarAtTop by mutableStateOf(false)
+    private var navBarExpanded by mutableStateOf(true)
+    private var sideNavHeightLeft by mutableIntStateOf(0)
+    private var sideNavHeightRight by mutableIntStateOf(0)
+
     // Estados de control del sistema (Brillo, Volumen, Conectividad)
     private var currentBrightness by mutableStateOf(0.5f)
     private var isAutoBrightness by mutableStateOf(false)
@@ -121,6 +126,47 @@ class LauncherAccessibilityService : AccessibilityService(), SavedStateRegistryO
             "GOOGLE" -> abrirUrl("https://www.google.com")
             "FILES" -> abrirAppArchivos()
             "CLOCK" -> if (!abrirRelojSistema()) toast("No se encontró el reloj")
+            "TOGGLE_NAVBAR_POSITION" -> toggleNavBarPosition()
+            "TOGGLE_NAVBAR_VISIBILITY" -> toggleNavBarVisibility()
+        }
+    }
+
+    private fun toggleNavBarVisibility() {
+        navBarExpanded = !navBarExpanded
+        setupBarraNavegacion()
+        ajustarPosicionSideNav(true)
+        ajustarPosicionSideNav(false)
+    }
+
+    /**
+     * Alterna la posición de la barra de navegación entre arriba y abajo.
+     */
+    private fun toggleNavBarPosition() {
+        navBarAtTop = !navBarAtTop
+        setupBarraNavegacion() // Actualizar posición de la barra
+
+        // Reposicionar los SideNavs para que no choquen con la nueva posición de la NavBar
+        ajustarPosicionSideNav(true)
+        ajustarPosicionSideNav(false)
+        
+        // Informar al resto de la app sobre el cambio de posición
+        sendBroadcast(Intent("NAVBAR_POSITION_CHANGED").putExtra("atTop", navBarAtTop))
+    }
+
+    private fun ajustarPosicionSideNav(isLeft: Boolean) {
+        val params = if (isLeft) paramsSideLeft else paramsSideRight
+        val vista = if (isLeft) vistaSideNavLeft else vistaSideNavRight
+        val height = if (isLeft) sideNavHeightLeft else sideNavHeightRight
+        
+        if (::windowManager.isInitialized && vista.parent != null) {
+            val navBarHeight = if (!navBarExpanded) (20 * resources.displayMetrics.density).toInt() else (48 * resources.displayMetrics.density).toInt()
+            val screenHeight = resources.displayMetrics.heightPixels
+            
+            val minY = if (navBarAtTop) navBarHeight else 0
+            val maxY = if (navBarAtTop) screenHeight - height else screenHeight - navBarHeight - height
+            
+            params.y = params.y.coerceIn(minY, maxY.coerceAtLeast(minY))
+            windowManager.updateViewLayout(vista, params)
         }
     }
 
@@ -278,10 +324,19 @@ class LauncherAccessibilityService : AccessibilityService(), SavedStateRegistryO
                         onAction = { manejarComando(it) },
                         onDrag = { deltaY ->
                             params.y += deltaY.toInt()
-                            // Limitar para que no se salga de la pantalla (opcional)
                             val screenHeight = resources.displayMetrics.heightPixels
-                            params.y = params.y.coerceIn(0, screenHeight - 200) 
+                            val navBarHeight = if (!navBarExpanded) (20 * resources.displayMetrics.density).toInt() else (48 * resources.displayMetrics.density).toInt()
+                            val height = if (isLeft) sideNavHeightLeft else sideNavHeightRight
+                            
+                            val minY = if (navBarAtTop) navBarHeight else 0
+                            val maxY = if (navBarAtTop) screenHeight - height else screenHeight - navBarHeight - height
+                            
+                            params.y = params.y.coerceIn(minY, maxY.coerceAtLeast(minY))
                             windowManager.updateViewLayout(this@apply, params)
+                        },
+                        onHeightChanged = { newHeight ->
+                            if (isLeft) sideNavHeightLeft = newHeight else sideNavHeightRight = newHeight
+                            ajustarPosicionSideNav(isLeft)
                         }
                     )
                 }
@@ -315,7 +370,12 @@ class LauncherAccessibilityService : AccessibilityService(), SavedStateRegistryO
             setViewTreeSavedStateRegistryOwner(this@LauncherAccessibilityService)
             setContent {
                 LauncherOrbysTheme {
-                    Box(modifier = Modifier.fillMaxSize().clickable(null, null) { toggleSystemOptions() }, contentAlignment = Alignment.BottomCenter) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clickable(null, null) { toggleSystemOptions() },
+                        contentAlignment = if (navBarAtTop) Alignment.TopCenter else Alignment.BottomCenter
+                    ) {
                         SystemOptionsPanel(
                             onSettingsClick = { launchSettings(Settings.ACTION_SETTINGS) },
                             onWifiClick = { launchSettings(Settings.ACTION_WIFI_SETTINGS) },
@@ -332,7 +392,12 @@ class LauncherAccessibilityService : AccessibilityService(), SavedStateRegistryO
                             currentBrightness = currentBrightness, onBrightnessChange = { cambiarBrillo(it) },
                             isAutoBrightness = isAutoBrightness, onAutoBrightnessChange = { cambiarModoBrillo(it) },
                             currentVolume = currentVolume, onVolumeChange = { cambiarVolumen(it) },
-                            modifier = Modifier.padding(bottom = 60.dp).clickable(null, null) { }
+                            modifier = Modifier
+                                .padding(
+                                    top = if (navBarAtTop) 50.dp else 0.dp,
+                                    bottom = if (navBarAtTop) 0.dp else 60.dp
+                                )
+                                .clickable(null, null) { }
                         )
                     }
                 }
@@ -341,30 +406,39 @@ class LauncherAccessibilityService : AccessibilityService(), SavedStateRegistryO
     }
 
     /**
-     * Crea y añade la barra de navegación persistente en la parte inferior.
+     * Crea y gestiona la barra de navegación persistente.
      */
     private fun setupBarraNavegacion() {
-        val h = (45 * resources.displayMetrics.density).toInt()
+        val h = if (!navBarExpanded) (20 * resources.displayMetrics.density).toInt() else (48 * resources.displayMetrics.density).toInt()
         val params = createOverlayParams(WindowManager.LayoutParams.MATCH_PARENT, h).apply {
-            gravity = Gravity.BOTTOM
+            gravity = if (navBarAtTop) Gravity.TOP else Gravity.BOTTOM
             flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
         }
 
-        vistaNav = ComposeView(this).apply {
-            setViewTreeLifecycleOwner(this@LauncherAccessibilityService)
-            setViewTreeSavedStateRegistryOwner(this@LauncherAccessibilityService)
-            setContent {
-                LauncherOrbysTheme {
-                    Box(modifier = Modifier.fillMaxSize()) {
-                        NavBar(
-                            onActionClicked = { manejarComando(it); sendBroadcast(Intent("ACCION_BARRA").putExtra("comando", it)) }, 
-                            iconColor = iconColorNav, backgroundColor = navBarBackground
-                        )
-                    }
+        if (!::vistaNav.isInitialized) {
+            vistaNav = ComposeView(this).apply {
+                setViewTreeLifecycleOwner(this@LauncherAccessibilityService)
+                setViewTreeSavedStateRegistryOwner(this@LauncherAccessibilityService)
+            }
+            windowManager.addView(vistaNav, params)
+        } else {
+            // Si ya existe, simplemente actualizamos sus LayoutParams para moverla de sitio
+            windowManager.updateViewLayout(vistaNav, params)
+        }
+
+        vistaNav.setContent {
+            LauncherOrbysTheme {
+                Box(modifier = Modifier.fillMaxSize()) {
+                    NavBar(
+                        onActionClicked = { manejarComando(it); sendBroadcast(Intent("ACCION_BARRA").putExtra("comando", it)) },
+                        iconColor = iconColorNav,
+                        backgroundColor = navBarBackground,
+                        isAtTop = navBarAtTop,
+                        isExpanded = navBarExpanded
+                    )
                 }
             }
         }
-        windowManager.addView(vistaNav, params)
     }
 
     /**

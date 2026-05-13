@@ -17,6 +17,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.dp
 
 @Composable
@@ -24,15 +25,17 @@ fun SideNavBar(
     isLeft: Boolean,
     onAction: (String) -> Unit,
     onDrag: (Float) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onHeightChanged: (Int) -> Unit = {}
 ) {
     var isExpanded by remember { mutableStateOf(true) }
-    val width by animateDpAsState(targetValue = if (isExpanded) 48.dp else 16.dp, label = "width")
+    val width by animateDpAsState(targetValue = if (isExpanded) 36.dp else 20.dp, label = "width")
     
     Box(
         modifier = modifier
             .width(width)
-            .wrapContentHeight()
+            .heightIn(min = if (isExpanded) 130.dp else 60.dp)
+            .onSizeChanged { onHeightChanged(it.height) }
             .pointerInput(Unit) {
                 detectDragGestures { change, dragAmount ->
                     change.consume()
@@ -52,7 +55,7 @@ fun SideNavBar(
     ) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(24.dp)
+            verticalArrangement = Arrangement.spacedBy(20.dp)
         ) {
             // Botón de Contraer/Expandir
             Icon(
@@ -64,7 +67,7 @@ fun SideNavBar(
                 contentDescription = "Toggle",
                 tint = Color.White,
                 modifier = Modifier
-                    .size(24.dp)
+                    .size(20.dp)
                     .clickable { isExpanded = !isExpanded }
             )
 
@@ -75,7 +78,7 @@ fun SideNavBar(
                     contentDescription = "Home",
                     tint = Color.White,
                     modifier = Modifier
-                        .size(28.dp)
+                        .size(24.dp)
                         .clickable { onAction("HOME") }
                 )
 
@@ -85,7 +88,7 @@ fun SideNavBar(
                     contentDescription = "Back",
                     tint = Color.White,
                     modifier = Modifier
-                        .size(28.dp)
+                        .size(24.dp)
                         .clickable { onAction("BACK") }
                 )
             }

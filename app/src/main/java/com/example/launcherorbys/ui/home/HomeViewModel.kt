@@ -20,6 +20,7 @@ class HomeViewModel : ViewModel() {
     var uriImagenFondo by mutableStateOf<Uri?>(null)
     var colorSolido by mutableStateOf<Color?>(null)
     var esTemaClaro by mutableStateOf(true)
+    var navBarAtTop by mutableStateOf(false)
 
     fun cerrarTodo() {
         mostrarMenuContextual = false
