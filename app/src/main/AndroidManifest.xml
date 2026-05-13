@@ -33,8 +33,6 @@
             </intent-filter>
         </activity>
 
-        <service android:name=".services.NavBarService" android:exported="false" />
-
         <service
             android:name=".services.LauncherAccessibilityService"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"

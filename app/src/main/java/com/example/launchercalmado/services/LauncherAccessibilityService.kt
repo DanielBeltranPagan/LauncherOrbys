@@ -9,7 +9,6 @@ import android.graphics.PixelFormat
 import android.media.AudioManager
 import android.net.Uri
 import android.os.Build
-import android.provider.AlarmClock
 import android.provider.Settings
 import android.view.Gravity
 import android.view.WindowManager
@@ -38,31 +37,37 @@ import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import com.example.launchercalmado.ui.components.AppDrawer
 import com.example.launchercalmado.ui.components.NavBar
-import com.example.launchercalmado.ui.components.StatusBar
+import com.example.launchercalmado.ui.components.SideNavBar
 import com.example.launchercalmado.ui.components.SystemOptionsPanel
 import com.example.launchercalmado.ui.theme.LauncherCalmadoTheme
 
 /**
- * Servicio de Accesibilidad que actúa como el motor visual persistente del launcher.
- * Permite superponer la barra de navegación, el cajón de apps y los ajustes rápidos
- * sobre cualquier otra aplicación.
+ * Servicio de Accesibilidad que actúa como el núcleo del Launcher.
+ * Gestiona la barra de navegación, el cajón de aplicaciones y el panel de ajustes rápidos
+ * mediante superposiciones (overlays) de Jetpack Compose.
  */
 class LauncherAccessibilityService : AccessibilityService(), SavedStateRegistryOwner, LifecycleOwner {
 
     private lateinit var windowManager: WindowManager
+    private lateinit var audioManager: AudioManager
+    
+    // Vistas de Compose que se añaden al WindowManager
     private lateinit var vistaNav: ComposeView
     private lateinit var vistaDrawer: ComposeView
     private lateinit var vistaSystemOptions: ComposeView
+    private lateinit var vistaSideNavLeft: ComposeView
+    private lateinit var vistaSideNavRight: ComposeView
+
+    private lateinit var paramsSideLeft: WindowManager.LayoutParams
+    private lateinit var paramsSideRight: WindowManager.LayoutParams
     
-    // Estados para controlar la apariencia de las barras
+    // Estados de la interfaz
     private var iconColorNav by mutableStateOf(Color.White)
     private var navBarBackground by mutableStateOf(Color.Black)
-
-    // Estados de visibilidad de los paneles
     private var drawerVisible by mutableStateOf(false)
     private var systemOptionsVisible by mutableStateOf(false)
     
-    // Estados de ajustes del sistema
+    // Estados de control del sistema (Brillo, Volumen, Conectividad)
     private var currentBrightness by mutableStateOf(0.5f)
     private var isAutoBrightness by mutableStateOf(false)
     private var isAirplaneModeOn by mutableStateOf(false)
@@ -70,47 +75,36 @@ class LauncherAccessibilityService : AccessibilityService(), SavedStateRegistryO
     private var isBluetoothOn by mutableStateOf(false)
     private var isMuted by mutableStateOf(false)
     private var currentVolume by mutableStateOf(0.5f)
-    private lateinit var audioManager: AudioManager
 
-    // Boilerplate necesario para usar Compose dentro de un Servicio
+    // Configuración necesaria para que Compose funcione dentro de un Service
     private val lifecycleRegistry = LifecycleRegistry(this)
     override val lifecycle: Lifecycle = lifecycleRegistry
     private val savedStateRegistryController = SavedStateRegistryController.create(this)
     override val savedStateRegistry: SavedStateRegistry = savedStateRegistryController.savedStateRegistry
 
-    // Escucha comandos para realizar acciones globales o cambiar el tema
+    // Receptor para eventos del sistema y cambios de tema
     private val receptorComandos = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             when (intent?.action) {
-                "CAMBIO_TEMA" -> {
-                    val esClaro = intent.getBooleanExtra("esClaro", true)
-                    actualizarColores(esClaro)
-                }
+                "CAMBIO_TEMA" -> actualizarColores(intent.getBooleanExtra("esClaro", true))
                 android.bluetooth.BluetoothAdapter.ACTION_STATE_CHANGED -> {
-                    val state = intent.getIntExtra(android.bluetooth.BluetoothAdapter.EXTRA_STATE, android.bluetooth.BluetoothAdapter.ERROR)
+                    val state = intent.getIntExtra(android.bluetooth.BluetoothAdapter.EXTRA_STATE, -1)
                     isBluetoothOn = state == android.bluetooth.BluetoothAdapter.STATE_ON
                 }
-                android.net.ConnectivityManager.CONNECTIVITY_ACTION -> {
-                    actualizarValoresSistema()
-                }
-                else -> manejarComando(intent?.getStringExtra("comando"))
+                android.net.ConnectivityManager.CONNECTIVITY_ACTION -> actualizarValoresSistema()
             }
         }
     }
 
     /**
-     * Procesa los comandos recibidos (normalmente desde la NavBar).
+     * Procesa las acciones de navegación y apertura de aplicaciones.
      */
     private fun manejarComando(comando: String?) {
         when (comando) {
-            "BACK" -> {
-                if (drawerVisible) toggleDrawer()
-                else performGlobalAction(GLOBAL_ACTION_BACK)
-            }
+            "BACK" -> if (drawerVisible) toggleDrawer() else performGlobalAction(GLOBAL_ACTION_BACK)
             "HOME" -> {
                 if (drawerVisible) toggleDrawer()
                 performGlobalAction(GLOBAL_ACTION_HOME)
-                // Forzamos la vuelta al Home de nuestro launcher
                 val intent = Intent(Intent.ACTION_MAIN).apply {
                     addCategory(Intent.CATEGORY_HOME)
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION)
@@ -124,96 +118,49 @@ class LauncherAccessibilityService : AccessibilityService(), SavedStateRegistryO
             }
             "APPS" -> toggleDrawer()
             "SYSTEM_OPTIONS" -> toggleSystemOptions()
+            "GOOGLE" -> abrirUrl("https://www.google.com")
+            "FILES" -> abrirAppArchivos()
+            "CLOCK" -> if (!abrirRelojSistema()) toast("No se encontró el reloj")
         }
     }
 
     /**
-     * Muestra u oculta el panel de ajustes rápidos (brillo, volumen, etc.).
+     * Muestra u oculta el panel de opciones del sistema.
      */
     private fun toggleSystemOptions() {
         if (!systemOptionsVisible) {
-            actualizarValoresSistema() // Refresca los valores antes de mostrar
+            actualizarValoresSistema()
             systemOptionsVisible = true
-            val params = WindowManager.LayoutParams(
-                WindowManager.LayoutParams.MATCH_PARENT,
-                WindowManager.LayoutParams.MATCH_PARENT,
-                WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
-                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
-                PixelFormat.TRANSLUCENT
-            )
+            val params = createOverlayParams(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT)
             windowManager.addView(vistaSystemOptions, params)
         } else {
-            if (::vistaSystemOptions.isInitialized && vistaSystemOptions.parent != null) {
-                windowManager.removeView(vistaSystemOptions)
-            }
+            if (::vistaSystemOptions.isInitialized && vistaSystemOptions.parent != null) windowManager.removeView(vistaSystemOptions)
             systemOptionsVisible = false
         }
     }
 
     /**
-     * Obtiene los valores actuales del sistema para sincronizar los Sliders.
+     * Obtiene los valores actuales de brillo, volumen y estado de redes.
      */
     private fun actualizarValoresSistema() {
         val maxVol = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
         if (maxVol > 0) {
-            val curVol = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
-            currentVolume = curVol.toFloat() / maxVol
+            currentVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC).toFloat() / maxVol
         }
-        
-        // Verificar si está silenciado
-        isMuted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            audioManager.isStreamMute(AudioManager.STREAM_MUSIC)
-        } else {
-            audioManager.getStreamVolume(AudioManager.STREAM_MUSIC) == 0
-        }
+        isMuted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) audioManager.isStreamMute(AudioManager.STREAM_MUSIC) 
+                  else audioManager.getStreamVolume(AudioManager.STREAM_MUSIC) == 0
 
         try {
-            val curBright = Settings.System.getInt(contentResolver, Settings.System.SCREEN_BRIGHTNESS)
-            currentBrightness = curBright.toFloat() / 255f
-            val mode = Settings.System.getInt(contentResolver, Settings.System.SCREEN_BRIGHTNESS_MODE)
-            isAutoBrightness = mode == Settings.System.SCREEN_BRIGHTNESS_MODE_AUTOMATIC
-        } catch (e: Exception) {
-            currentBrightness = 0.5f
-            isAutoBrightness = false
-        }
+            currentBrightness = Settings.System.getInt(contentResolver, Settings.System.SCREEN_BRIGHTNESS) / 255f
+            isAutoBrightness = Settings.System.getInt(contentResolver, Settings.System.SCREEN_BRIGHTNESS_MODE) == Settings.System.SCREEN_BRIGHTNESS_MODE_AUTOMATIC
+        } catch (e: Exception) { }
 
-        try {
-            isAirplaneModeOn = Settings.Global.getInt(contentResolver, Settings.Global.AIRPLANE_MODE_ON, 0) != 0
-        } catch (e: Exception) {
-            isAirplaneModeOn = false
-        }
-
+        isAirplaneModeOn = Settings.Global.getInt(contentResolver, Settings.Global.AIRPLANE_MODE_ON, 0) != 0
         try {
             val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
-            val network = cm.activeNetwork
-            val caps = cm.getNetworkCapabilities(network)
-            isWifiOn = caps?.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI) == true
-        } catch (e: Exception) {
-            isWifiOn = false
-        }
-
-        try {
-            val btAdapter = android.bluetooth.BluetoothAdapter.getDefaultAdapter()
-            isBluetoothOn = btAdapter?.isEnabled == true
-        } catch (e: Exception) {
-            isBluetoothOn = false
-        }
-    }
-
-    // --- Métodos de gestión del sistema (brillo, volumen, modo avión) ---
-
-    private fun toggleAirplaneMode() {
-        val nuevoEstado = if (isAirplaneModeOn) 0 else 1
-        try {
-            Settings.Global.putInt(contentResolver, Settings.Global.AIRPLANE_MODE_ON, nuevoEstado)
-            isAirplaneModeOn = nuevoEstado != 0
-        } catch (e: SecurityException) {
-            // Si no tenemos permiso directo, abrimos los ajustes
-            val intent = Intent(Settings.ACTION_AIRPLANE_MODE_SETTINGS)
-            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION)
-            startActivity(intent)
-            toggleSystemOptions()
-        }
+            isWifiOn = cm.getNetworkCapabilities(cm.activeNetwork)?.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI) == true
+            isBluetoothOn = android.bluetooth.BluetoothAdapter.getDefaultAdapter()?.isEnabled == true
+        } catch (e: Exception) { }
     }
 
     private fun cambiarModoBrillo(auto: Boolean) {
@@ -221,22 +168,16 @@ class LauncherAccessibilityService : AccessibilityService(), SavedStateRegistryO
             val modo = if (auto) Settings.System.SCREEN_BRIGHTNESS_MODE_AUTOMATIC else Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL
             Settings.System.putInt(contentResolver, Settings.System.SCREEN_BRIGHTNESS_MODE, modo)
             isAutoBrightness = auto
-        } else {
-            solicitarPermisoEscritura()
-        }
+        } else solicitarPermisoEscritura()
     }
 
     private fun solicitarPermisoEscritura() {
-        val intent = Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS)
-        intent.data = Uri.parse("package:$packageName")
-        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        startActivity(intent)
-        Toast.makeText(this, "Concede permiso para cambiar los ajustes", Toast.LENGTH_SHORT).show()
+        startActivity(Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS, Uri.parse("package:$packageName")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        toast("Concede permiso de escritura")
     }
 
     private fun cambiarVolumen(valor: Float) {
-        val maxVol = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
-        val newVol = (valor * maxVol).toInt()
+        val newVol = (valor * audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)).toInt()
         audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, newVol, 0)
         currentVolume = valor
         if (valor > 0f) isMuted = false
@@ -254,12 +195,9 @@ class LauncherAccessibilityService : AccessibilityService(), SavedStateRegistryO
 
     private fun cambiarBrillo(valor: Float) {
         if (Settings.System.canWrite(this)) {
-            val newBright = (valor * 255).toInt()
-            Settings.System.putInt(contentResolver, Settings.System.SCREEN_BRIGHTNESS, newBright)
+            Settings.System.putInt(contentResolver, Settings.System.SCREEN_BRIGHTNESS, (valor * 255).toInt())
             currentBrightness = valor
-        } else {
-            solicitarPermisoEscritura()
-        }
+        } else solicitarPermisoEscritura()
     }
 
     /**
@@ -268,33 +206,16 @@ class LauncherAccessibilityService : AccessibilityService(), SavedStateRegistryO
     private fun toggleDrawer() {
         if (!drawerVisible) {
             drawerVisible = true
-            val params = WindowManager.LayoutParams(
-                WindowManager.LayoutParams.MATCH_PARENT,
-                WindowManager.LayoutParams.MATCH_PARENT,
-                WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
-                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
-                PixelFormat.TRANSLUCENT
-            )
-            windowManager.addView(vistaDrawer, params)
+            windowManager.addView(vistaDrawer, createOverlayParams(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT))
         } else {
-            if (::vistaDrawer.isInitialized && vistaDrawer.parent != null) {
-                windowManager.removeView(vistaDrawer)
-            }
+            if (::vistaDrawer.isInitialized && vistaDrawer.parent != null) windowManager.removeView(vistaDrawer)
             drawerVisible = false
         }
     }
 
-    /**
-     * Sincroniza los colores de las barras con el tema actual.
-     */
     private fun actualizarColores(esClaro: Boolean) {
-        if (esClaro) {
-            navBarBackground = Color.Black
-            iconColorNav = Color.White
-        } else {
-            navBarBackground = Color.White
-            iconColorNav = Color.Black
-        }
+        navBarBackground = if (esClaro) Color.Black else Color.White
+        iconColorNav = if (esClaro) Color.White else Color.Black
     }
 
     override fun onCreate() {
@@ -302,9 +223,7 @@ class LauncherAccessibilityService : AccessibilityService(), SavedStateRegistryO
         savedStateRegistryController.performRestore(null)
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_CREATE)
         
-        // Carga el tema inicial desde las preferencias
-        val prefs = getSharedPreferences("launcher_prefs", MODE_PRIVATE)
-        val esClaro = prefs.getBoolean("esClaro", true)
+        val esClaro = getSharedPreferences("launcher_prefs", MODE_PRIVATE).getBoolean("esClaro", true)
         actualizarColores(esClaro)
     }
 
@@ -314,30 +233,72 @@ class LauncherAccessibilityService : AccessibilityService(), SavedStateRegistryO
         
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
         audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
-        val density = resources.displayMetrics.density
 
-        // Configuración de las distintas vistas superpuestas
+        // Inicializar overlays
         setupDrawerOverlay()
         setupSystemOptionsOverlay()
-        setupBarraNavegacion(density)
+        setupBarraNavegacion()
+        setupSideNavs()
         registrarReceptores()
     }
 
-    // --- Métodos de configuración de las vistas de Compose ---
+    /**
+     * Configura las barras de navegación laterales (Izquierda y Derecha).
+     */
+    private fun setupSideNavs() {
+        val initialY = (resources.displayMetrics.heightPixels / 3)
 
+        paramsSideLeft = createOverlayParams(WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.WRAP_CONTENT).apply {
+            gravity = Gravity.START or Gravity.TOP
+            y = initialY
+            flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+        }
+
+        paramsSideRight = createOverlayParams(WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.WRAP_CONTENT).apply {
+            gravity = Gravity.END or Gravity.TOP
+            y = initialY
+            flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+        }
+
+        vistaSideNavLeft = createSideNavComposeView(true, paramsSideLeft)
+        vistaSideNavRight = createSideNavComposeView(false, paramsSideRight)
+
+        windowManager.addView(vistaSideNavLeft, paramsSideLeft)
+        windowManager.addView(vistaSideNavRight, paramsSideRight)
+    }
+
+    private fun createSideNavComposeView(isLeft: Boolean, params: WindowManager.LayoutParams): ComposeView {
+        return ComposeView(this).apply {
+            setViewTreeLifecycleOwner(this@LauncherAccessibilityService)
+            setViewTreeSavedStateRegistryOwner(this@LauncherAccessibilityService)
+            setContent {
+                LauncherCalmadoTheme {
+                    SideNavBar(
+                        isLeft = isLeft,
+                        onAction = { manejarComando(it) },
+                        onDrag = { deltaY ->
+                            params.y += deltaY.toInt()
+                            // Limitar para que no se salga de la pantalla (opcional)
+                            val screenHeight = resources.displayMetrics.heightPixels
+                            params.y = params.y.coerceIn(0, screenHeight - 200) 
+                            windowManager.updateViewLayout(this@apply, params)
+                        }
+                    )
+                }
+            }
+        }
+    }
+
+    /**
+     * Configura la vista de Compose para el cajón de aplicaciones.
+     */
     private fun setupDrawerOverlay() {
         vistaDrawer = ComposeView(this).apply {
             setViewTreeLifecycleOwner(this@LauncherAccessibilityService)
             setViewTreeSavedStateRegistryOwner(this@LauncherAccessibilityService)
-
             setContent {
                 LauncherCalmadoTheme {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .clickable(interactionSource = null, indication = null) { toggleDrawer() },
-                        contentAlignment = Alignment.Center
-                    ) {
+                    Box(modifier = Modifier.fillMaxSize().clickable(null, null) { toggleDrawer() }, contentAlignment = Alignment.Center) {
                         AppDrawer(onClose = { toggleDrawer() })
                     }
                 }
@@ -345,74 +306,33 @@ class LauncherAccessibilityService : AccessibilityService(), SavedStateRegistryO
         }
     }
 
+    /**
+     * Configura la vista de Compose para el panel de ajustes rápidos.
+     */
     private fun setupSystemOptionsOverlay() {
         vistaSystemOptions = ComposeView(this).apply {
             setViewTreeLifecycleOwner(this@LauncherAccessibilityService)
             setViewTreeSavedStateRegistryOwner(this@LauncherAccessibilityService)
-
             setContent {
                 LauncherCalmadoTheme {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .clickable(interactionSource = null, indication = null) { toggleSystemOptions() },
-                        contentAlignment = Alignment.BottomCenter
-                    ) {
+                    Box(modifier = Modifier.fillMaxSize().clickable(null, null) { toggleSystemOptions() }, contentAlignment = Alignment.BottomCenter) {
                         SystemOptionsPanel(
-                            onSettingsClick = {
-                                startActivity(Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION))
-                                toggleSystemOptions()
-                            },
-                            onWifiClick = {
-                                startActivity(Intent(Settings.ACTION_WIFI_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION))
-                                toggleSystemOptions()
-                            },
-                            onBluetoothClick = {
-                                // En muchos dispositivos modernos, esto lleva a Connection Preferences / Connected Devices
-                                val intent = Intent("android.settings.CONNECTED_DEVICE_SETTINGS").apply {
-                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION)
-                                }
-                                try {
-                                    startActivity(intent)
-                                } catch (e: Exception) {
-                                    // Fallback al estándar si el anterior falla
-                                    startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS).apply {
-                                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION)
-                                    })
-                                }
-                                toggleSystemOptions()
-                            },
+                            onSettingsClick = { launchSettings(Settings.ACTION_SETTINGS) },
+                            onWifiClick = { launchSettings(Settings.ACTION_WIFI_SETTINGS) },
+                            onBluetoothClick = { abrirAjustesBT() },
                             onMuteClick = { toggleMute() },
-                            onPowerClick = {
-                                performGlobalAction(GLOBAL_ACTION_POWER_DIALOG)
-                                toggleSystemOptions()
-                            },
+                            onPowerClick = { performGlobalAction(GLOBAL_ACTION_POWER_DIALOG); toggleSystemOptions() },
                             onScreenshotClick = {
-                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                                    performGlobalAction(GLOBAL_ACTION_TAKE_SCREENSHOT)
-                                } else {
-                                    Toast.makeText(this@LauncherAccessibilityService, "Captura no soportada", Toast.LENGTH_SHORT).show()
-                                }
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) performGlobalAction(GLOBAL_ACTION_TAKE_SCREENSHOT)
+                                else toast("No soportado")
                                 toggleSystemOptions()
                             },
-                            onRecordClick = {
-                                if (!abrirGrabadorPantalla()) {
-                                    Toast.makeText(this@LauncherAccessibilityService, "El grabador de pantalla no está disponible en este dispositivo", Toast.LENGTH_SHORT).show()
-                                }
-                                toggleSystemOptions()
-                            },
-                            isWifiOn = isWifiOn,
-                            isBluetoothOn = isBluetoothOn,
-                            isMuted = isMuted,
-                            currentBrightness = currentBrightness,
-                            onBrightnessChange = { cambiarBrillo(it) },
-                            isAutoBrightness = isAutoBrightness,
-                            onAutoBrightnessChange = { cambiarModoBrillo(it) },
-                            currentVolume = currentVolume,
-                            onVolumeChange = { cambiarVolumen(it) },
-                            modifier = Modifier
-                                .padding(bottom = 60.dp)
-                                .clickable(interactionSource = null, indication = null) { /* Consume el click */ }
+                            onRecordClick = { if (!abrirGrabadorPantalla()) toast("No disponible"); toggleSystemOptions() },
+                            isWifiOn = isWifiOn, isBluetoothOn = isBluetoothOn, isMuted = isMuted,
+                            currentBrightness = currentBrightness, onBrightnessChange = { cambiarBrillo(it) },
+                            isAutoBrightness = isAutoBrightness, onAutoBrightnessChange = { cambiarModoBrillo(it) },
+                            currentVolume = currentVolume, onVolumeChange = { cambiarVolumen(it) },
+                            modifier = Modifier.padding(bottom = 60.dp).clickable(null, null) { }
                         )
                     }
                 }
@@ -420,123 +340,91 @@ class LauncherAccessibilityService : AccessibilityService(), SavedStateRegistryO
         }
     }
 
-    private fun setupBarraNavegacion(density: Float) {
-        val params = WindowManager.LayoutParams(
-            WindowManager.LayoutParams.MATCH_PARENT,
-            (45 * density).toInt(),
-            WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
-                    WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
-            PixelFormat.TRANSLUCENT
-        ).apply {
+    /**
+     * Crea y añade la barra de navegación persistente en la parte inferior.
+     */
+    private fun setupBarraNavegacion() {
+        val h = (45 * resources.displayMetrics.density).toInt()
+        val params = createOverlayParams(WindowManager.LayoutParams.MATCH_PARENT, h).apply {
             gravity = Gravity.BOTTOM
+            flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
         }
 
         vistaNav = ComposeView(this).apply {
             setViewTreeLifecycleOwner(this@LauncherAccessibilityService)
             setViewTreeSavedStateRegistryOwner(this@LauncherAccessibilityService)
-
             setContent {
                 LauncherCalmadoTheme {
                     Box(modifier = Modifier.fillMaxSize()) {
                         NavBar(
-                            onActionClicked = { accion ->
-                                when (accion) {
-                                    "GOOGLE" -> {
-                                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com"))
-                                        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION)
-                                        try { startActivity(intent) } catch (e: Exception) {}
-                                    }
-                                    "FILES" -> {
-                                        val intent = packageManager.getLaunchIntentForPackage("com.google.android.documentsui")
-                                            ?: Intent(Intent.ACTION_GET_CONTENT).apply { type = "*/*" }
-                                        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION)
-                                        try { startActivity(intent) } catch (e: Exception) {}
-                                    }
-                                    "CLOCK" -> {
-                                        if (!abrirRelojSistema()) {
-                                            Toast.makeText(this@LauncherAccessibilityService, "No se pudo encontrar la app de Reloj", Toast.LENGTH_SHORT).show()
-                                        }
-                                    }
-                                }
-                                // Notifica a la MainActivity y a otros componentes
-                                sendBroadcast(Intent("ACCION_BARRA").putExtra("comando", accion))
-                            }, 
-                            iconColor = iconColorNav,
-                            backgroundColor = navBarBackground
+                            onActionClicked = { manejarComando(it); sendBroadcast(Intent("ACCION_BARRA").putExtra("comando", it)) }, 
+                            iconColor = iconColorNav, backgroundColor = navBarBackground
                         )
                     }
                 }
             }
         }
-
         windowManager.addView(vistaNav, params)
     }
 
-    private fun abrirGrabadorPantalla(): Boolean {
-        // Intentar abrir el grabador de pantalla nativo de Android 11+ (SystemUI)
-        val intents = arrayOf(
-            Intent().setComponent(android.content.ComponentName("com.android.systemui", "com.android.systemui.screenrecord.ScreenRecordDialog")),
-            Intent("com.android.systemui.screenrecord.START"),
-            Intent().setComponent(android.content.ComponentName("com.samsung.android.app.screenrecorder", "com.samsung.android.app.screenrecorder.ScreenRecorderService")), // Samsung
-            Intent().setComponent(android.content.ComponentName("com.miui.screenrecorder", "com.miui.screenrecorder.ActivityMain")) // Xiaomi
-        )
+    /**
+     * Helper para crear los LayoutParams de las ventanas superpuestas.
+     */
+    private fun createOverlayParams(w: Int, h: Int) = WindowManager.LayoutParams(
+        w, h, WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+        WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
+        PixelFormat.TRANSLUCENT
+    )
 
-        for (intent in intents) {
-            try {
-                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                startActivity(intent)
-                return true
-            } catch (e: Exception) {
-                // Continuar probando
-            }
+    private fun launchSettings(action: String) {
+        startActivity(Intent(action).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION))
+        toggleSystemOptions()
+    }
+
+    private fun abrirUrl(url: String) {
+        try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) } catch (e: Exception) {}
+    }
+
+    private fun abrirAppArchivos() {
+        val intent = packageManager.getLaunchIntentForPackage("com.google.android.documentsui") ?: Intent(Intent.ACTION_GET_CONTENT).apply { type = "*/*" }
+        try { startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) } catch (e: Exception) {}
+    }
+
+    private fun abrirAjustesBT() {
+        val intent = try { Intent("android.settings.CONNECTED_DEVICE_SETTINGS") } catch (e: Exception) { Intent(Settings.ACTION_BLUETOOTH_SETTINGS) }
+        startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        toggleSystemOptions()
+    }
+
+    private fun abrirGrabadorPantalla(): Boolean {
+        val intents = listOf(
+            Intent().setClassName("com.android.systemui", "com.android.systemui.screenrecord.ScreenRecordDialog"),
+            Intent("com.android.systemui.screenrecord.START"),
+            packageManager.getLaunchIntentForPackage("com.samsung.android.app.screenrecorder"),
+            packageManager.getLaunchIntentForPackage("com.miui.screenrecorder")
+        )
+        for (i in intents) {
+            try { i?.let { it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK); startActivity(it); return true } } catch (e: Exception) {}
         }
         return false
     }
 
     private fun abrirRelojSistema(): Boolean {
-        val paquetesReloj = arrayOf(
-            "com.google.android.deskclock",      // Google / Pixel
-            "com.android.deskclock",             // AOSP
-            "com.sec.android.app.clockpackage",  // Samsung
-            "com.sonyericsson.organizer",        // Sony
-            "com.huawei.deskclock",              // Huawei
-            "com.oppo.alarmclock",               // Oppo
-            "com.coloros.alarmclock",            // Realme/Oppo
-            "com.htc.android.worldclock",        // HTC
-            "com.motorola.blur.alarmclock",      // Motorola
-            "com.lge.clock"                      // LG
-        )
-
-        for (paquete in paquetesReloj) {
-            val intent = packageManager.getLaunchIntentForPackage(paquete)
-            if (intent != null) {
-                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION)
-                startActivity(intent)
-                return true
-            }
+        val pkgs = listOf("com.google.android.deskclock", "com.android.deskclock", "com.sec.android.app.clockpackage", "com.huawei.deskclock")
+        for (p in pkgs) {
+            val i = packageManager.getLaunchIntentForPackage(p)
+            if (i != null) { startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); return true }
         }
-        
-        // Fallback si no encontramos ninguno de los paquetes conocidos
-        return try {
-            val intent = Intent(android.provider.AlarmClock.ACTION_SHOW_ALARMS)
-            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION)
-            startActivity(intent)
-            true
-        } catch (e: Exception) {
-            false
-        }
+        return try { startActivity(Intent(android.provider.AlarmClock.ACTION_SHOW_ALARMS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); true } catch (e: Exception) { false }
     }
+
+    private fun toast(m: String) = Toast.makeText(this, m, Toast.LENGTH_SHORT).show()
 
     private fun registrarReceptores() {
         val filter = IntentFilter().apply {
             addAction("CAMBIO_TEMA")
-            addAction("COMANDO_SISTEMA")
-            addAction("ACCION_BARRA")
             addAction(android.bluetooth.BluetoothAdapter.ACTION_STATE_CHANGED)
-            @Suppress("DEPRECATION")
-            addAction(android.net.ConnectivityManager.CONNECTIVITY_ACTION)
+            @Suppress("DEPRECATION") addAction(android.net.ConnectivityManager.CONNECTIVITY_ACTION)
         }
         ContextCompat.registerReceiver(this, receptorComandos, filter, ContextCompat.RECEIVER_EXPORTED)
     }
@@ -546,14 +434,13 @@ class LauncherAccessibilityService : AccessibilityService(), SavedStateRegistryO
 
     override fun onDestroy() {
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_DESTROY)
-        // Limpiamos todas las vistas del WindowManager para evitar fugas y errores
-        if (::vistaNav.isInitialized) windowManager.removeView(vistaNav)
-        if (::vistaDrawer.isInitialized && vistaDrawer.parent != null) windowManager.removeView(vistaDrawer)
-        if (::vistaSystemOptions.isInitialized && vistaSystemOptions.parent != null) windowManager.removeView(vistaSystemOptions)
-        
-        try {
-            unregisterReceiver(receptorComandos)
-        } catch (e: Exception) {}
+        // Eliminar todas las vistas del WindowManager para evitar fugas de memoria
+        if (::vistaNav.isInitialized) try { windowManager.removeView(vistaNav) } catch (e: Exception) {}
+        if (::vistaDrawer.isInitialized && vistaDrawer.parent != null) try { windowManager.removeView(vistaDrawer) } catch (e: Exception) {}
+        if (::vistaSystemOptions.isInitialized && vistaSystemOptions.parent != null) try { windowManager.removeView(vistaSystemOptions) } catch (e: Exception) {}
+        if (::vistaSideNavLeft.isInitialized && vistaSideNavLeft.parent != null) try { windowManager.removeView(vistaSideNavLeft) } catch (e: Exception) {}
+        if (::vistaSideNavRight.isInitialized && vistaSideNavRight.parent != null) try { windowManager.removeView(vistaSideNavRight) } catch (e: Exception) {}
+        try { unregisterReceiver(receptorComandos) } catch (e: Exception) {}
         super.onDestroy()
     }
 }

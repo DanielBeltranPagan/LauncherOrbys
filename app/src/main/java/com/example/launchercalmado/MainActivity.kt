@@ -29,29 +29,26 @@ import com.example.launchercalmado.ui.home.HomeViewModel
 import com.example.launchercalmado.ui.theme.LauncherCalmadoTheme
 
 /**
- * Actividad principal del Launcher.
- * Se encarga de la inicialización, gestión de permisos, configuración visual y
- * de la comunicación con otros componentes a través de BroadcastReceivers.
+ * Actividad principal que sirve como punto de entrada y contenedor de la pantalla de inicio.
+ * Gestiona permisos, fondos de pantalla y la comunicación con la barra de navegación.
  */
 class MainActivity : ComponentActivity() {
 
     private val viewModel: HomeViewModel by viewModels()
     private var showingPermissionDialog = false
 
-    // Receptor para comandos enviados desde la barra de navegación personalizada
+    // Escucha acciones externas para cerrar menús o actualizar UI
     private val receptorBarra = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
-            when (intent?.getStringExtra("comando")) {
-                "HOME", "BACK", "GOOGLE", "FILES", "RECENTS", "APPS" -> viewModel.cerrarTodo()
-            }
+            if (intent?.getStringExtra("comando") != null) viewModel.cerrarTodo()
         }
     }
 
-    // Receptor para detectar cambios en el fondo de pantalla del sistema
+    // Detecta cambios en el fondo de pantalla del sistema
     private val receptorWallpaper = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             viewModel.setBackground(null, null)
-            guardarPreferencias("", true)
+            savePrefs("", true)
         }
     }
 
@@ -59,202 +56,145 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
-        setupTransitions() // Configura transiciones sin animaciones para mayor fluidez
-        cargarPreferencias() // Carga la configuración guardada del usuario
+        setupTransitions()
+        loadPrefs()
         
-        // Configuración para que la app se dibuje detrás de las barras del sistema
         WindowCompat.setDecorFitsSystemWindows(window, false)
         window.setBackgroundDrawableResource(android.R.color.transparent)
-        hideStatusBar() // Oculta la barra de estado para un look más limpio
+        hideStatusBar()
 
-        registerReceivers() // Registra los receptores de eventos
-        setupWallpaperColorsListener() // Escucha cambios de colores en el fondo de pantalla
-        checkAndStartService() // Verifica permisos necesarios (Overlay, Accesibilidad)
+        registerReceivers()
+        setupWallpaperListener()
+        checkPermissions()
 
         setContent {
             LauncherCalmadoTheme {
-                // Elimina el efecto de "rebote" al final de las listas
                 CompositionLocalProvider(LocalOverscrollConfiguration provides null) {
-                    HomeScreen(
-                        viewModel = viewModel,
-                        onPersonalizarClick = { abrirWallpaperStyleSistema() }
-                    )
+                    HomeScreen(viewModel = viewModel, onPersonalizarClick = { openWallpaperPicker() })
                 }
             }
         }
     }
 
-    /**
-     * Elimina las animaciones de transición al abrir/cerrar la actividad.
-     */
     private fun setupTransitions() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             overrideActivityTransition(OVERRIDE_TRANSITION_OPEN, 0, 0)
         } else {
-            @Suppress("DEPRECATION")
-            overridePendingTransition(0, 0)
+            @Suppress("DEPRECATION") overridePendingTransition(0, 0)
         }
     }
 
-    /**
-     * Registra los BroadcastReceivers necesarios.
-     */
     private fun registerReceivers() {
         ContextCompat.registerReceiver(this, receptorBarra, IntentFilter("ACCION_BARRA"), ContextCompat.RECEIVER_EXPORTED)
         registerReceiver(receptorWallpaper, IntentFilter(Intent.ACTION_WALLPAPER_CHANGED))
     }
 
-    /**
-     * Escucha los cambios de color del fondo de pantalla para adaptar el tema.
-     */
-    private fun setupWallpaperColorsListener() {
+    private fun setupWallpaperListener() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
-            val wm = WallpaperManager.getInstance(this)
-            wm.addOnColorsChangedListener({ colors, _ ->
+            WallpaperManager.getInstance(this).addOnColorsChangedListener({ colors, _ ->
                 if (viewModel.uriImagenFondo == null && viewModel.colorSolido == null) {
-                    actualizarColoresDesdeSistema(colors)
+                    updateColors(colors)
                 }
             }, Handler(Looper.getMainLooper()))
         }
     }
 
-    /**
-     * Abre el selector de fondos de pantalla del sistema.
-     */
-    private fun abrirWallpaperStyleSistema() {
+    private fun openWallpaperPicker() {
         try {
-            val intent = Intent(Intent.ACTION_SET_WALLPAPER)
-            startActivity(intent)
+            startActivity(Intent(Intent.ACTION_SET_WALLPAPER))
         } catch (e: Exception) {
             try {
-                val intent = Intent(WallpaperManager.ACTION_CHANGE_LIVE_WALLPAPER)
-                startActivity(intent)
+                startActivity(Intent(WallpaperManager.ACTION_CHANGE_LIVE_WALLPAPER))
             } catch (e2: Exception) {
-                Toast.makeText(this, "No se pudo abrir el selector del sistema", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "Error abriendo selector", Toast.LENGTH_SHORT).show()
             }
         }
     }
 
     /**
-     * Verifica y solicita permisos críticos para el funcionamiento del launcher.
+     * Verifica que el launcher tenga los permisos necesarios (Superposición, Accesibilidad)
+     * y sea el launcher predeterminado.
      */
-    private fun checkAndStartService() {
+    private fun checkPermissions() {
         if (showingPermissionDialog) return
         
-        // Verifica si es el launcher predeterminado
         if (!isDefaultLauncher()) {
-            mostrarDialogoPredeterminado()
+            showLauncherDialog()
             return
         }
 
-        val hasOverlay = Settings.canDrawOverlays(this)
-        val hasAccessibility = isAccessibilityServiceEnabled()
-
-        // Pide permiso de superposición si no lo tiene
-        if (!hasOverlay) { 
+        if (!Settings.canDrawOverlays(this)) { 
             showingPermissionDialog = true
             startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName"))) 
-        } 
-        // Pide activar el servicio de accesibilidad si es necesario
-        else if (!hasAccessibility) { 
+        } else if (!isAccessibilityEnabled()) { 
             showingPermissionDialog = true
             startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) 
         }
     }
 
-    /**
-     * Muestra un diálogo sugiriendo establecer la app como launcher predeterminado.
-     */
-    private fun mostrarDialogoPredeterminado() {
+    private fun showLauncherDialog() {
         showingPermissionDialog = true
         AlertDialog.Builder(this)
             .setTitle("Configurar Launcher")
-            .setMessage("Establécelo como predeterminado para mejor estabilidad.")
-            .setPositiveButton("Configurar") { _, _ -> 
+            .setMessage("Pon Calmado como predeterminado para que funcione mejor.")
+            .setPositiveButton("Ir") { _, _ -> 
                 showingPermissionDialog = false
                 startActivity(Intent(Settings.ACTION_HOME_SETTINGS)) 
             }
-            .setNegativeButton("Más tarde") { _, _ -> 
-                showingPermissionDialog = false 
-            }
+            .setNegativeButton("Luego") { _, _ -> showingPermissionDialog = false }
             .show()
     }
 
-    /**
-     * Comprueba si esta aplicación es el launcher actual por defecto.
-     */
     private fun isDefaultLauncher(): Boolean {
         val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
         val resolveInfo = packageManager.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY)
         return resolveInfo?.activityInfo?.packageName == packageName
     }
 
-    /**
-     * Comprueba si el servicio de accesibilidad del launcher está activo.
-     */
-    private fun isAccessibilityServiceEnabled(): Boolean {
+    private fun isAccessibilityEnabled(): Boolean {
         val expected = ComponentName(this, LauncherAccessibilityService::class.java).flattenToString()
         val enabled = Settings.Secure.getString(contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES) ?: return false
         return enabled.split(':').any { it.equals(expected, ignoreCase = true) }
     }
 
     /**
-     * Oculta las barras del sistema (estado y navegación) para modo inmersivo.
+     * Oculta las barras del sistema (estado y navegación) para una experiencia inmersiva.
      */
     private fun hideStatusBar() {
-        val windowInsetsController = WindowCompat.getInsetsController(window, window.decorView)
-        windowInsetsController.systemBarsBehavior = 
-            WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-        windowInsetsController.hide(WindowInsetsCompat.Type.systemBars())
+        val controller = WindowCompat.getInsetsController(window, window.decorView)
+        controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        controller.hide(WindowInsetsCompat.Type.systemBars())
     }
 
     /**
-     * Actualiza el tema (claro/oscuro) basándose en los colores del fondo de pantalla.
+     * Actualiza el tema del launcher basándose en los colores del fondo de pantalla actual.
      */
-    private fun actualizarColoresDesdeSistema(colors: WallpaperColors?) {
+    private fun updateColors(colors: WallpaperColors?) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1 && colors != null) {
             val isLight = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 (colors.colorHints and WallpaperColors.HINT_SUPPORTS_DARK_TEXT) != 0
             } else true
             viewModel.updateTheme(isLight)
-            notificarCambioTema(isLight)
+            sendBroadcast(Intent("CAMBIO_TEMA").putExtra("esClaro", isLight))
         }
     }
 
-    /**
-     * Envía un broadcast avisando que el tema ha cambiado.
-     */
-    private fun notificarCambioTema(isLight: Boolean) {
-        val intent = Intent("CAMBIO_TEMA")
-        intent.putExtra("esClaro", isLight)
-        sendBroadcast(intent)
+    private fun savePrefs(fondo: String, claro: Boolean) {
+        getSharedPreferences("launcher_prefs", MODE_PRIVATE).edit()
+            .putString("fondo", fondo)
+            .putBoolean("esClaro", claro)
+            .apply()
     }
 
-    /**
-     * Guarda las preferencias de fondo y tema en SharedPreferences.
-     */
-    private fun guardarPreferencias(fondo: String, claro: Boolean) {
-        val prefs = getSharedPreferences("launcher_prefs", MODE_PRIVATE)
-        prefs.edit().putString("fondo", fondo).putBoolean("esClaro", claro).apply()
-    }
-
-    /**
-     * Carga las preferencias guardadas al iniciar.
-     */
-    private fun cargarPreferencias() {
+    private fun loadPrefs() {
         val prefs = getSharedPreferences("launcher_prefs", MODE_PRIVATE)
         val fondoStr = prefs.getString("fondo", null)
         val esClaro = prefs.getBoolean("esClaro", true)
         viewModel.updateTheme(esClaro)
         
-        if (!fondoStr.isNullOrEmpty()) {
-            if (fondoStr.startsWith("content://")) { 
-                viewModel.setBackground(Uri.parse(fondoStr), null)
-            } else { 
-                try { 
-                    viewModel.setBackground(null, Color(fondoStr.toULong()))
-                } catch (e: Exception) {} 
-            }
+        fondoStr?.takeIf { it.isNotEmpty() }?.let {
+            if (it.startsWith("content://")) viewModel.setBackground(Uri.parse(it), null)
+            else try { viewModel.setBackground(null, Color(it.toULong())) } catch (e: Exception) {}
         }
     }
 
@@ -262,7 +202,7 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         setupTransitions()
         hideStatusBar()
-        checkAndStartService() 
+        checkPermissions() 
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -272,19 +212,17 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onBackPressed() {
-        // Si hay un menú contextual abierto, lo cierra en lugar de salir
         if (viewModel.mostrarMenuContextual) viewModel.cerrarTodo()
         else super.onBackPressed()
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
-        if (hasFocus) hideStatusBar() // Asegura que las barras sigan ocultas al volver a la app
+        if (hasFocus) hideStatusBar()
     }
 
     override fun onDestroy() { 
         super.onDestroy()
-        // Desregistra los receptores para evitar fugas de memoria
         try { unregisterReceiver(receptorBarra) } catch (e: Exception) {}
         try { unregisterReceiver(receptorWallpaper) } catch (e: Exception) {}
     }

@@ -8,26 +8,24 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 /**
- * Repositorio encargado de gestionar la lista de aplicaciones del sistema.
- * Utiliza un StateFlow para que la interfaz pueda reaccionar automáticamente a los cambios.
+ * Repositorio encargado de gestionar la lista de aplicaciones instaladas.
+ * Actúa como intermediario entre la fuente de datos (AppLoader) y la interfaz de usuario.
  */
 class AppRepository(private val context: Context) {
-    private val appLoader = AppLoader(context)
-    private val _apps = MutableStateFlow<List<AppInfo>>(emptyList())
+    private val loader = AppLoader(context)
     
-    /**
-     * Flow observable con la lista de aplicaciones instaladas.
-     */
+    // Flujo de estado que contiene la lista actual de aplicaciones
+    private val _apps = MutableStateFlow<List<AppInfo>>(emptyList())
     val apps: StateFlow<List<AppInfo>> = _apps.asStateFlow()
 
     init {
-        refreshApps() // Carga inicial al crear el repositorio
+        refreshApps()
     }
 
     /**
-     * Fuerza la recarga de las aplicaciones desde el sistema.
+     * Fuerza una recarga de la lista de aplicaciones desde el sistema.
      */
     fun refreshApps() {
-        _apps.value = appLoader.loadInstalledApps()
+        _apps.value = loader.loadInstalledApps()
     }
 }
