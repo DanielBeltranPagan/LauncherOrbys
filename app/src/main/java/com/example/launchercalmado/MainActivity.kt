@@ -5,9 +5,6 @@ import android.app.WallpaperColors
 import android.app.WallpaperManager
 import android.content.*
 import android.content.pm.PackageManager
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
-import android.graphics.Canvas
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -17,226 +14,118 @@ import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.animation.*
+import androidx.activity.viewModels
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.LocalOverscrollConfiguration
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.IntOffset
-import androidx.compose.ui.unit.dp
-import kotlin.math.roundToInt
 import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import com.example.launchercalmado.services.LauncherAccessibilityService
+import com.example.launchercalmado.ui.home.HomeScreen
+import com.example.launchercalmado.ui.home.HomeViewModel
 import com.example.launchercalmado.ui.theme.LauncherCalmadoTheme
-import com.example.launchercalmado.ui.components.StatusBar
 
+/**
+ * Actividad principal del Launcher.
+ * Se encarga de la inicialización, gestión de permisos, configuración visual y
+ * de la comunicación con otros componentes a través de BroadcastReceivers.
+ */
 class MainActivity : ComponentActivity() {
 
-    // --- Estados de la Interfaz ---
-    private var mostrarMenuContextual by mutableStateOf(false)
-    private var posicionToque by mutableStateOf(Offset.Zero)
-    private var uriImagenFondo by mutableStateOf<Uri?>(null)
-    private var colorSolido by mutableStateOf<Color?>(null)
-    private var esTemaClaro by mutableStateOf(true)
+    private val viewModel: HomeViewModel by viewModels()
     private var showingPermissionDialog = false
 
-    // --- Receptores de Eventos ---
+    // Receptor para comandos enviados desde la barra de navegación personalizada
     private val receptorBarra = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
-            // Cerramos menús abiertos cuando se interactúa con la barra
             when (intent?.getStringExtra("comando")) {
-                "HOME", "BACK", "GOOGLE", "FILES", "RECENTS", "APPS" -> cerrarTodo()
+                "HOME", "BACK", "GOOGLE", "FILES", "RECENTS", "APPS" -> viewModel.cerrarTodo()
             }
         }
     }
 
+    // Receptor para detectar cambios en el fondo de pantalla del sistema
     private val receptorWallpaper = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
-            // Resetear fondo personalizado si el sistema cambia el wallpaper
-            uriImagenFondo = null
-            colorSolido = null
+            viewModel.setBackground(null, null)
             guardarPreferencias("", true)
         }
     }
 
-    // --- Métodos de Ciclo de Vida ---
     @OptIn(ExperimentalFoundationApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
-        // Quitar animaciones de entrada
+        setupTransitions() // Configura transiciones sin animaciones para mayor fluidez
+        cargarPreferencias() // Carga la configuración guardada del usuario
+        
+        // Configuración para que la app se dibuje detrás de las barras del sistema
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        window.setBackgroundDrawableResource(android.R.color.transparent)
+        hideStatusBar() // Oculta la barra de estado para un look más limpio
+
+        registerReceivers() // Registra los receptores de eventos
+        setupWallpaperColorsListener() // Escucha cambios de colores en el fondo de pantalla
+        checkAndStartService() // Verifica permisos necesarios (Overlay, Accesibilidad)
+
+        setContent {
+            LauncherCalmadoTheme {
+                // Elimina el efecto de "rebote" al final de las listas
+                CompositionLocalProvider(LocalOverscrollConfiguration provides null) {
+                    HomeScreen(
+                        viewModel = viewModel,
+                        onPersonalizarClick = { abrirWallpaperStyleSistema() }
+                    )
+                }
+            }
+        }
+    }
+
+    /**
+     * Elimina las animaciones de transición al abrir/cerrar la actividad.
+     */
+    private fun setupTransitions() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             overrideActivityTransition(OVERRIDE_TRANSITION_OPEN, 0, 0)
         } else {
             @Suppress("DEPRECATION")
             overridePendingTransition(0, 0)
         }
-        
-        cargarPreferencias()
-        
-        // Configuración visual: pantalla completa y transparencia
-        WindowCompat.setDecorFitsSystemWindows(window, false)
-        window.setBackgroundDrawableResource(android.R.color.transparent)
-        hideStatusBar()
+    }
 
-        // Registro de receptores
+    /**
+     * Registra los BroadcastReceivers necesarios.
+     */
+    private fun registerReceivers() {
         ContextCompat.registerReceiver(this, receptorBarra, IntentFilter("ACCION_BARRA"), ContextCompat.RECEIVER_EXPORTED)
         registerReceiver(receptorWallpaper, IntentFilter(Intent.ACTION_WALLPAPER_CHANGED))
-        
-        // Escucha de cambios en colores del wallpaper (Android 8.1+)
+    }
+
+    /**
+     * Escucha los cambios de color del fondo de pantalla para adaptar el tema.
+     */
+    private fun setupWallpaperColorsListener() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
             val wm = WallpaperManager.getInstance(this)
             wm.addOnColorsChangedListener({ colors, _ ->
-                if (uriImagenFondo == null && colorSolido == null) actualizarColoresDesdeSistema(colors)
+                if (viewModel.uriImagenFondo == null && viewModel.colorSolido == null) {
+                    actualizarColoresDesdeSistema(colors)
+                }
             }, Handler(Looper.getMainLooper()))
         }
-
-        checkAndStartService()
-
-        setContent {
-            LauncherCalmadoTheme {
-                CompositionLocalProvider(LocalOverscrollConfiguration provides null) {
-                    Surface(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .pointerInput(Unit) {
-                                detectTapGestures(
-                                    onLongPress = { offset ->
-                                        posicionToque = offset
-                                        mostrarMenuContextual = true
-                                    },
-                                    onTap = { cerrarTodo() }
-                                )
-                            },
-                        color = colorSolido ?: Color.Transparent
-                    ) {
-                        ContenidoPrincipal()
-                    }
-                }
-            }
-        }
     }
 
-    @Composable
-    private fun ContenidoPrincipal() {
-        // Fondo personalizado si existe
-        uriImagenFondo?.let { uri ->
-            val bitmap = remember(uri) { 
-                try {
-                    val inputStream = contentResolver.openInputStream(uri)
-                    BitmapFactory.decodeStream(inputStream)
-                } catch (e: Exception) { null }
-            }
-            bitmap?.let {
-                Image(
-                    bitmap = it.asImageBitmap(),
-                    contentDescription = null,
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop
-                )
-            }
-        }
-
-        Box(modifier = Modifier.fillMaxSize()) {
-            // Fondo personalizado si existe
-            uriImagenFondo?.let { uri ->
-                val bitmap = remember(uri) { 
-                    try {
-                        val inputStream = contentResolver.openInputStream(uri)
-                        BitmapFactory.decodeStream(inputStream)
-                    } catch (e: Exception) { null }
-                }
-                bitmap?.let {
-                    Image(
-                        bitmap = it.asImageBitmap(),
-                        contentDescription = null,
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop
-                    )
-                }
-            }
-
-            BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-                if (mostrarMenuContextual) {
-                    MenuContextual(
-                        posicion = posicionToque,
-                        onPersonalizarClick = {
-                            abrirWallpaperStyleSistema()
-                            mostrarMenuContextual = false
-                        },
-                        onDismiss = { mostrarMenuContextual = false }
-                    )
-                }
-            }
-        }
-    }
-
-    @Composable
-    fun BoxWithConstraintsScope.MenuContextual(posicion: Offset, onPersonalizarClick: () -> Unit, onDismiss: () -> Unit) {
-        // Fondo invisible para cerrar al tocar fuera
-        Box(modifier = Modifier.fillMaxSize().clickable { onDismiss() })
-        
-        Card(
-            modifier = Modifier
-                .offset { 
-                    IntOffset(
-                        posicion.x.roundToInt().coerceIn(0, (constraints.maxWidth - 220.dp.toPx().toInt()).coerceAtLeast(0)), 
-                        posicion.y.roundToInt().coerceIn(0, (constraints.maxHeight - 80.dp.toPx().toInt()).coerceAtLeast(0))
-                    ) 
-                }
-                .width(220.dp),
-            shape = RoundedCornerShape(28.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(8.dp)),
-            elevation = CardDefaults.cardElevation(12.dp)
-        ) {
-            Column(modifier = Modifier.padding(8.dp)) {
-                TextButton(
-                    onClick = onPersonalizarClick,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(20.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(Icons.Default.Palette, null, tint = MaterialTheme.colorScheme.primary)
-                        Spacer(modifier = Modifier.width(16.dp))
-                        Text(
-                            "Fondo y estilo",
-                            color = MaterialTheme.colorScheme.onSurface,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                }
-            }
-        }
-    }
-
+    /**
+     * Abre el selector de fondos de pantalla del sistema.
+     */
     private fun abrirWallpaperStyleSistema() {
         try {
-            // Intent estándar para abrir el selector de fondos y estilos en Android 12+
             val intent = Intent(Intent.ACTION_SET_WALLPAPER)
             startActivity(intent)
         } catch (e: Exception) {
-            // Fallback para dispositivos que no soportan el intent directo
             try {
                 val intent = Intent(WallpaperManager.ACTION_CHANGE_LIVE_WALLPAPER)
                 startActivity(intent)
@@ -246,10 +135,13 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    // --- Lógica de Permisos y Sistema ---
+    /**
+     * Verifica y solicita permisos críticos para el funcionamiento del launcher.
+     */
     private fun checkAndStartService() {
         if (showingPermissionDialog) return
         
+        // Verifica si es el launcher predeterminado
         if (!isDefaultLauncher()) {
             mostrarDialogoPredeterminado()
             return
@@ -258,15 +150,21 @@ class MainActivity : ComponentActivity() {
         val hasOverlay = Settings.canDrawOverlays(this)
         val hasAccessibility = isAccessibilityServiceEnabled()
 
+        // Pide permiso de superposición si no lo tiene
         if (!hasOverlay) { 
             showingPermissionDialog = true
             startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName"))) 
-        } else if (!hasAccessibility) { 
+        } 
+        // Pide activar el servicio de accesibilidad si es necesario
+        else if (!hasAccessibility) { 
             showingPermissionDialog = true
             startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) 
         }
     }
 
+    /**
+     * Muestra un diálogo sugiriendo establecer la app como launcher predeterminado.
+     */
     private fun mostrarDialogoPredeterminado() {
         showingPermissionDialog = true
         AlertDialog.Builder(this)
@@ -282,18 +180,27 @@ class MainActivity : ComponentActivity() {
             .show()
     }
 
+    /**
+     * Comprueba si esta aplicación es el launcher actual por defecto.
+     */
     private fun isDefaultLauncher(): Boolean {
         val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
         val resolveInfo = packageManager.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY)
         return resolveInfo?.activityInfo?.packageName == packageName
     }
 
+    /**
+     * Comprueba si el servicio de accesibilidad del launcher está activo.
+     */
     private fun isAccessibilityServiceEnabled(): Boolean {
-        val expected = ComponentName(this, AccesibilidadService::class.java).flattenToString()
+        val expected = ComponentName(this, LauncherAccessibilityService::class.java).flattenToString()
         val enabled = Settings.Secure.getString(contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES) ?: return false
         return enabled.split(':').any { it.equals(expected, ignoreCase = true) }
     }
 
+    /**
+     * Oculta las barras del sistema (estado y navegación) para modo inmersivo.
+     */
     private fun hideStatusBar() {
         val windowInsetsController = WindowCompat.getInsetsController(window, window.decorView)
         windowInsetsController.systemBarsBehavior = 
@@ -301,52 +208,59 @@ class MainActivity : ComponentActivity() {
         windowInsetsController.hide(WindowInsetsCompat.Type.systemBars())
     }
 
-    private fun cerrarTodo() {
-        mostrarMenuContextual = false
-    }
-
+    /**
+     * Actualiza el tema (claro/oscuro) basándose en los colores del fondo de pantalla.
+     */
     private fun actualizarColoresDesdeSistema(colors: WallpaperColors?) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1 && colors != null) {
-            esTemaClaro = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val isLight = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 (colors.colorHints and WallpaperColors.HINT_SUPPORTS_DARK_TEXT) != 0
             } else true
-            notificarCambioTema()
+            viewModel.updateTheme(isLight)
+            notificarCambioTema(isLight)
         }
     }
 
-    private fun notificarCambioTema() {
+    /**
+     * Envía un broadcast avisando que el tema ha cambiado.
+     */
+    private fun notificarCambioTema(isLight: Boolean) {
         val intent = Intent("CAMBIO_TEMA")
-        intent.putExtra("esClaro", esTemaClaro)
+        intent.putExtra("esClaro", isLight)
         sendBroadcast(intent)
     }
 
+    /**
+     * Guarda las preferencias de fondo y tema en SharedPreferences.
+     */
     private fun guardarPreferencias(fondo: String, claro: Boolean) {
         val prefs = getSharedPreferences("launcher_prefs", MODE_PRIVATE)
         prefs.edit().putString("fondo", fondo).putBoolean("esClaro", claro).apply()
     }
 
+    /**
+     * Carga las preferencias guardadas al iniciar.
+     */
     private fun cargarPreferencias() {
         val prefs = getSharedPreferences("launcher_prefs", MODE_PRIVATE)
         val fondoStr = prefs.getString("fondo", null)
-        esTemaClaro = prefs.getBoolean("esClaro", true)
-        if (fondoStr != null && fondoStr.isNotEmpty()) {
+        val esClaro = prefs.getBoolean("esClaro", true)
+        viewModel.updateTheme(esClaro)
+        
+        if (!fondoStr.isNullOrEmpty()) {
             if (fondoStr.startsWith("content://")) { 
-                uriImagenFondo = Uri.parse(fondoStr)
-                colorSolido = null 
+                viewModel.setBackground(Uri.parse(fondoStr), null)
             } else { 
-                try { colorSolido = Color(fondoStr.toULong()) } catch (e: Exception) {} 
+                try { 
+                    viewModel.setBackground(null, Color(fondoStr.toULong()))
+                } catch (e: Exception) {} 
             }
         }
     }
 
     override fun onResume() { 
         super.onResume()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            overrideActivityTransition(OVERRIDE_TRANSITION_OPEN, 0, 0)
-        } else {
-            @Suppress("DEPRECATION")
-            overridePendingTransition(0, 0)
-        }
+        setupTransitions()
         hideStatusBar()
         checkAndStartService() 
     }
@@ -354,26 +268,23 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            overrideActivityTransition(OVERRIDE_TRANSITION_OPEN, 0, 0)
-        } else {
-            @Suppress("DEPRECATION")
-            overridePendingTransition(0, 0)
-        }
+        setupTransitions()
     }
 
     override fun onBackPressed() {
-        if (mostrarMenuContextual) mostrarMenuContextual = false
+        // Si hay un menú contextual abierto, lo cierra en lugar de salir
+        if (viewModel.mostrarMenuContextual) viewModel.cerrarTodo()
         else super.onBackPressed()
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
-        if (hasFocus) hideStatusBar()
+        if (hasFocus) hideStatusBar() // Asegura que las barras sigan ocultas al volver a la app
     }
 
     override fun onDestroy() { 
         super.onDestroy()
+        // Desregistra los receptores para evitar fugas de memoria
         try { unregisterReceiver(receptorBarra) } catch (e: Exception) {}
         try { unregisterReceiver(receptorWallpaper) } catch (e: Exception) {}
     }

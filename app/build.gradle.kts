@@ -10,7 +10,7 @@ android {
 
     defaultConfig {
         applicationId = "com.example.launchercalmado"
-        minSdk = 24
+        minSdk = 24 // Compatible desde Android 7.0 Nougat
         targetSdk = 35
         versionCode = 1
         versionName = "1.0"
@@ -40,12 +40,15 @@ android {
 }
 
 dependencies {
+    // Core y ciclo de vida
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.service)
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.activity.compose)
+    
+    // Jetpack Compose
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.ui)
     implementation(libs.androidx.ui.graphics)
@@ -55,10 +58,13 @@ dependencies {
     implementation(libs.androidx.foundation)
     implementation(libs.androidx.animation)
     implementation(libs.androidx.runtime)
+    
+    // UI tradicional y utilidades
     implementation(libs.androidx.appcompat)
     implementation(libs.material)
     implementation(libs.androidx.savedstate.ktx)
 
+    // Pruebas
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)

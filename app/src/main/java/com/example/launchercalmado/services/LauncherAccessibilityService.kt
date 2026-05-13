@@ -1,119 +1,116 @@
-package com.example.launchercalmado
+package com.example.launchercalmado.services
 
 import android.accessibilityservice.AccessibilityService
-import android.bluetooth.BluetoothAdapter
 import android.content.BroadcastReceiver
-import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.content.pm.PackageManager
-import android.content.pm.ResolveInfo
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.graphics.PixelFormat
-import android.graphics.Rect
 import android.media.AudioManager
 import android.net.Uri
-import android.net.wifi.WifiManager
 import android.os.Build
-import android.provider.Settings
 import android.provider.AlarmClock
+import android.provider.Settings
 import android.view.Gravity
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.widget.Toast
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
-import androidx.core.graphics.drawable.toBitmap
-import androidx.lifecycle.*
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.LifecycleRegistry
+import androidx.lifecycle.setViewTreeLifecycleOwner
 import androidx.savedstate.SavedStateRegistry
 import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
+import com.example.launchercalmado.ui.components.AppDrawer
 import com.example.launchercalmado.ui.components.NavBar
 import com.example.launchercalmado.ui.components.StatusBar
 import com.example.launchercalmado.ui.components.SystemOptionsPanel
 import com.example.launchercalmado.ui.theme.LauncherCalmadoTheme
 
-class AccesibilidadService : AccessibilityService(), SavedStateRegistryOwner, LifecycleOwner {
+/**
+ * Servicio de Accesibilidad que actúa como el motor visual persistente del launcher.
+ * Permite superponer la barra de navegación, el cajón de apps y los ajustes rápidos
+ * sobre cualquier otra aplicación.
+ */
+class LauncherAccessibilityService : AccessibilityService(), SavedStateRegistryOwner, LifecycleOwner {
 
-    // --- Gestores de Ventanas y Vistas ---
     private lateinit var windowManager: WindowManager
     private lateinit var vistaNav: ComposeView
-    private lateinit var vistaStatus: ComposeView
     private lateinit var vistaDrawer: ComposeView
     private lateinit var vistaSystemOptions: ComposeView
     
-    // --- Estados de Apariencia ---
-    private var iconColorStatus by mutableStateOf(Color.White)
+    // Estados para controlar la apariencia de las barras
     private var iconColorNav by mutableStateOf(Color.White)
     private var navBarBackground by mutableStateOf(Color.Black)
 
-    // --- Estados del Drawer (Lista de Apps) ---
+    // Estados de visibilidad de los paneles
     private var drawerVisible by mutableStateOf(false)
-    private var searchQuery by mutableStateOf("")
-    private var appsList by mutableStateOf<List<ResolveInfo>>(emptyList())
-
-    // --- Estados del Panel de Sistema ---
     private var systemOptionsVisible by mutableStateOf(false)
+    
+    // Estados de ajustes del sistema
     private var currentBrightness by mutableStateOf(0.5f)
     private var isAutoBrightness by mutableStateOf(false)
     private var isAirplaneModeOn by mutableStateOf(false)
+    private var isWifiOn by mutableStateOf(false)
+    private var isBluetoothOn by mutableStateOf(false)
+    private var isMuted by mutableStateOf(false)
     private var currentVolume by mutableStateOf(0.5f)
     private lateinit var audioManager: AudioManager
 
-    // --- Lifecycle Support ---
+    // Boilerplate necesario para usar Compose dentro de un Servicio
     private val lifecycleRegistry = LifecycleRegistry(this)
     override val lifecycle: Lifecycle = lifecycleRegistry
     private val savedStateRegistryController = SavedStateRegistryController.create(this)
     override val savedStateRegistry: SavedStateRegistry = savedStateRegistryController.savedStateRegistry
 
-    // --- Receptor de Comandos ---
+    // Escucha comandos para realizar acciones globales o cambiar el tema
     private val receptorComandos = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
-            if (intent?.action == "CAMBIO_TEMA") {
-                val esClaro = intent.getBooleanExtra("esClaro", true)
-                actualizarColores(esClaro)
-                return
+            when (intent?.action) {
+                "CAMBIO_TEMA" -> {
+                    val esClaro = intent.getBooleanExtra("esClaro", true)
+                    actualizarColores(esClaro)
+                }
+                android.bluetooth.BluetoothAdapter.ACTION_STATE_CHANGED -> {
+                    val state = intent.getIntExtra(android.bluetooth.BluetoothAdapter.EXTRA_STATE, android.bluetooth.BluetoothAdapter.ERROR)
+                    isBluetoothOn = state == android.bluetooth.BluetoothAdapter.STATE_ON
+                }
+                android.net.ConnectivityManager.CONNECTIVITY_ACTION -> {
+                    actualizarValoresSistema()
+                }
+                else -> manejarComando(intent?.getStringExtra("comando"))
             }
-            manejarComando(intent?.getStringExtra("comando"))
         }
     }
 
     /**
-     * Recibe y procesa comandos enviados desde otros componentes (como la barra de navegación)
+     * Procesa los comandos recibidos (normalmente desde la NavBar).
      */
     private fun manejarComando(comando: String?) {
         when (comando) {
             "BACK" -> {
-                // Si el cajón de apps está abierto, lo cierra. Si no, va atrás en el sistema.
                 if (drawerVisible) toggleDrawer()
                 else performGlobalAction(GLOBAL_ACTION_BACK)
             }
             "HOME" -> {
                 if (drawerVisible) toggleDrawer()
-                // Ejecuta la acción de ir a la pantalla de inicio
                 performGlobalAction(GLOBAL_ACTION_HOME)
-                // Asegura que nuestra actividad principal se abra instantáneamente
+                // Forzamos la vuelta al Home de nuestro launcher
                 val intent = Intent(Intent.ACTION_MAIN).apply {
                     addCategory(Intent.CATEGORY_HOME)
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION)
@@ -123,20 +120,19 @@ class AccesibilidadService : AccessibilityService(), SavedStateRegistryOwner, Li
             "RECENTS" -> {
                 if (drawerVisible) toggleDrawer()
                 if (systemOptionsVisible) toggleSystemOptions()
-                // Muestra la pantalla de aplicaciones recientes
                 performGlobalAction(GLOBAL_ACTION_RECENTS)
             }
-            "APPS" -> toggleDrawer() // Abre o cierra el cajón de aplicaciones
-            "SYSTEM_OPTIONS" -> toggleSystemOptions() // Abre o cierra el panel de ajustes rápidos
+            "APPS" -> toggleDrawer()
+            "SYSTEM_OPTIONS" -> toggleSystemOptions()
         }
     }
 
     /**
-     * Abre o cierra el panel de ajustes rápidos (brillo, volumen, etc.)
+     * Muestra u oculta el panel de ajustes rápidos (brillo, volumen, etc.).
      */
     private fun toggleSystemOptions() {
         if (!systemOptionsVisible) {
-            actualizarValoresSistema() // Lee el brillo y volumen actual antes de mostrar el panel
+            actualizarValoresSistema() // Refresca los valores antes de mostrar
             systemOptionsVisible = true
             val params = WindowManager.LayoutParams(
                 WindowManager.LayoutParams.MATCH_PARENT,
@@ -145,9 +141,8 @@ class AccesibilidadService : AccessibilityService(), SavedStateRegistryOwner, Li
                 WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
                 PixelFormat.TRANSLUCENT
             )
-            windowManager.addView(vistaSystemOptions, params) // Añade la vista a la pantalla
+            windowManager.addView(vistaSystemOptions, params)
         } else {
-            // Si ya está visible, lo quita
             if (::vistaSystemOptions.isInitialized && vistaSystemOptions.parent != null) {
                 windowManager.removeView(vistaSystemOptions)
             }
@@ -156,21 +151,25 @@ class AccesibilidadService : AccessibilityService(), SavedStateRegistryOwner, Li
     }
 
     /**
-     * Lee el volumen y el brillo actuales del sistema para que el menú esté sincronizado
+     * Obtiene los valores actuales del sistema para sincronizar los Sliders.
      */
     private fun actualizarValoresSistema() {
-        // Lee el volumen multimedia actual
         val maxVol = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
         if (maxVol > 0) {
             val curVol = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
             currentVolume = curVol.toFloat() / maxVol
         }
+        
+        // Verificar si está silenciado
+        isMuted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            audioManager.isStreamMute(AudioManager.STREAM_MUSIC)
+        } else {
+            audioManager.getStreamVolume(AudioManager.STREAM_MUSIC) == 0
+        }
 
-        // Lee el nivel de brillo y si el modo automático está activado
         try {
             val curBright = Settings.System.getInt(contentResolver, Settings.System.SCREEN_BRIGHTNESS)
             currentBrightness = curBright.toFloat() / 255f
-            
             val mode = Settings.System.getInt(contentResolver, Settings.System.SCREEN_BRIGHTNESS_MODE)
             isAutoBrightness = mode == Settings.System.SCREEN_BRIGHTNESS_MODE_AUTOMATIC
         } catch (e: Exception) {
@@ -178,35 +177,45 @@ class AccesibilidadService : AccessibilityService(), SavedStateRegistryOwner, Li
             isAutoBrightness = false
         }
 
-        // Lee el estado del modo avión
         try {
             isAirplaneModeOn = Settings.Global.getInt(contentResolver, Settings.Global.AIRPLANE_MODE_ON, 0) != 0
         } catch (e: Exception) {
             isAirplaneModeOn = false
         }
-    }
 
-    /**
-     * Intenta cambiar el modo avión directamente o abre los ajustes si no hay permiso
-     */
-    private fun toggleAirplaneMode() {
-        val nuevoEstado = if (isAirplaneModeOn) 0 else 1
         try {
-            // Intento de cambio directo (Requiere permiso WRITE_SECURE_SETTINGS vía ADB)
-            Settings.Global.putInt(contentResolver, Settings.Global.AIRPLANE_MODE_ON, nuevoEstado)
-            isAirplaneModeOn = nuevoEstado != 0
-        } catch (e: SecurityException) {
-            // Si falla por falta de permisos, abrimos la pantalla de ajustes
-            val intent = Intent(Settings.ACTION_AIRPLANE_MODE_SETTINGS)
-            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION)
-            startActivity(intent)
-            toggleSystemOptions() // Cerramos el panel para ver el cambio
+            val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
+            val network = cm.activeNetwork
+            val caps = cm.getNetworkCapabilities(network)
+            isWifiOn = caps?.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI) == true
+        } catch (e: Exception) {
+            isWifiOn = false
+        }
+
+        try {
+            val btAdapter = android.bluetooth.BluetoothAdapter.getDefaultAdapter()
+            isBluetoothOn = btAdapter?.isEnabled == true
+        } catch (e: Exception) {
+            isBluetoothOn = false
         }
     }
 
-    /**
-     * Activa o desactiva el sensor de luz (Brillo Automático)
-     */
+    // --- Métodos de gestión del sistema (brillo, volumen, modo avión) ---
+
+    private fun toggleAirplaneMode() {
+        val nuevoEstado = if (isAirplaneModeOn) 0 else 1
+        try {
+            Settings.Global.putInt(contentResolver, Settings.Global.AIRPLANE_MODE_ON, nuevoEstado)
+            isAirplaneModeOn = nuevoEstado != 0
+        } catch (e: SecurityException) {
+            // Si no tenemos permiso directo, abrimos los ajustes
+            val intent = Intent(Settings.ACTION_AIRPLANE_MODE_SETTINGS)
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION)
+            startActivity(intent)
+            toggleSystemOptions()
+        }
+    }
+
     private fun cambiarModoBrillo(auto: Boolean) {
         if (Settings.System.canWrite(this)) {
             val modo = if (auto) Settings.System.SCREEN_BRIGHTNESS_MODE_AUTOMATIC else Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL
@@ -217,9 +226,6 @@ class AccesibilidadService : AccessibilityService(), SavedStateRegistryOwner, Li
         }
     }
 
-    /**
-     * Pide permiso al usuario para modificar los ajustes del sistema (necesario para el brillo)
-     */
     private fun solicitarPermisoEscritura() {
         val intent = Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS)
         intent.data = Uri.parse("package:$packageName")
@@ -228,19 +234,24 @@ class AccesibilidadService : AccessibilityService(), SavedStateRegistryOwner, Li
         Toast.makeText(this, "Concede permiso para cambiar los ajustes", Toast.LENGTH_SHORT).show()
     }
 
-    /**
-     * Cambia el volumen del teléfono según la barrita del menú
-     */
     private fun cambiarVolumen(valor: Float) {
         val maxVol = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
         val newVol = (valor * maxVol).toInt()
         audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, newVol, 0)
         currentVolume = valor
+        if (valor > 0f) isMuted = false
     }
 
-    /**
-     * Cambia el brillo de la pantalla (solo funciona si el modo automático está apagado)
-     */
+    private fun toggleMute() {
+        isMuted = !isMuted
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            audioManager.adjustStreamVolume(AudioManager.STREAM_MUSIC, if (isMuted) AudioManager.ADJUST_MUTE else AudioManager.ADJUST_UNMUTE, 0)
+        } else {
+            @Suppress("DEPRECATION")
+            audioManager.setStreamMute(AudioManager.STREAM_MUSIC, isMuted)
+        }
+    }
+
     private fun cambiarBrillo(valor: Float) {
         if (Settings.System.canWrite(this)) {
             val newBright = (valor * 255).toInt()
@@ -252,11 +263,10 @@ class AccesibilidadService : AccessibilityService(), SavedStateRegistryOwner, Li
     }
 
     /**
-     * Muestra u oculta la lista completa de aplicaciones instaladas
+     * Muestra u oculta el cajón de aplicaciones.
      */
     private fun toggleDrawer() {
         if (!drawerVisible) {
-            appsList = getInstalledApps() // Carga la lista de apps antes de abrir
             drawerVisible = true
             val params = WindowManager.LayoutParams(
                 WindowManager.LayoutParams.MATCH_PARENT,
@@ -271,17 +281,17 @@ class AccesibilidadService : AccessibilityService(), SavedStateRegistryOwner, Li
                 windowManager.removeView(vistaDrawer)
             }
             drawerVisible = false
-            searchQuery = "" // Limpia la búsqueda al cerrar
         }
     }
 
+    /**
+     * Sincroniza los colores de las barras con el tema actual.
+     */
     private fun actualizarColores(esClaro: Boolean) {
         if (esClaro) {
-            iconColorStatus = Color.Black
             navBarBackground = Color.Black
             iconColorNav = Color.White
         } else {
-            iconColorStatus = Color.White
             navBarBackground = Color.White
             iconColorNav = Color.Black
         }
@@ -292,6 +302,7 @@ class AccesibilidadService : AccessibilityService(), SavedStateRegistryOwner, Li
         savedStateRegistryController.performRestore(null)
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_CREATE)
         
+        // Carga el tema inicial desde las preferencias
         val prefs = getSharedPreferences("launcher_prefs", MODE_PRIVATE)
         val esClaro = prefs.getBoolean("esClaro", true)
         actualizarColores(esClaro)
@@ -305,18 +316,19 @@ class AccesibilidadService : AccessibilityService(), SavedStateRegistryOwner, Li
         audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
         val density = resources.displayMetrics.density
 
+        // Configuración de las distintas vistas superpuestas
         setupDrawerOverlay()
         setupSystemOptionsOverlay()
         setupBarraNavegacion(density)
-        setupBarraStatus(density)
         registrarReceptores()
     }
 
-    // --- Configuración de Overlays ---
+    // --- Métodos de configuración de las vistas de Compose ---
+
     private fun setupDrawerOverlay() {
         vistaDrawer = ComposeView(this).apply {
-            setViewTreeLifecycleOwner(this@AccesibilidadService)
-            setViewTreeSavedStateRegistryOwner(this@AccesibilidadService)
+            setViewTreeLifecycleOwner(this@LauncherAccessibilityService)
+            setViewTreeSavedStateRegistryOwner(this@LauncherAccessibilityService)
 
             setContent {
                 LauncherCalmadoTheme {
@@ -324,95 +336,19 @@ class AccesibilidadService : AccessibilityService(), SavedStateRegistryOwner, Li
                         modifier = Modifier
                             .fillMaxSize()
                             .clickable(interactionSource = null, indication = null) { toggleDrawer() },
-                        contentAlignment = Alignment.BottomCenter
+                        contentAlignment = Alignment.Center
                     ) {
-                        DrawerContenido()
+                        AppDrawer(onClose = { toggleDrawer() })
                     }
                 }
-            }
-        }
-    }
-
-    @Composable
-    private fun DrawerContenido() {
-        val filteredApps = remember(searchQuery, appsList) {
-            if (searchQuery.isEmpty()) appsList
-            else appsList.filter { it.loadLabel(packageManager).toString().contains(searchQuery, ignoreCase = true) }
-        }
-
-        Box(
-            modifier = Modifier
-                .fillMaxWidth(0.40f)
-                .fillMaxHeight(0.5f)
-                .padding(bottom = 100.dp)
-                .clip(RoundedCornerShape(24.dp))
-                .background(Color.DarkGray.copy(alpha = 0.95f))
-                .clickable(interactionSource = null, indication = null) { /* Consume clics en el panel */ }
-        ) {
-            Column {
-                TextField(
-                    value = searchQuery,
-                    onValueChange = { searchQuery = it },
-                    modifier = Modifier.fillMaxWidth().padding(8.dp),
-                    placeholder = { Text("Buscar...", color = Color.Gray, style = MaterialTheme.typography.labelSmall) },
-                    singleLine = true,
-                    textStyle = MaterialTheme.typography.labelSmall.copy(color = Color.White),
-                    colors = TextFieldDefaults.colors(
-                        focusedContainerColor = Color.Transparent,
-                        unfocusedContainerColor = Color.Transparent,
-                        focusedIndicatorColor = Color.White.copy(alpha = 0.5f),
-                        unfocusedIndicatorColor = Color.Transparent
-                    )
-                )
-                
-                LazyVerticalGrid(columns = GridCells.Fixed(4), contentPadding = PaddingValues(8.dp)) {
-                    items(filteredApps) { app ->
-                        AppItem(app)
-                    }
-                }
-            }
-        }
-    }
-
-    @Composable
-    private fun AppItem(app: ResolveInfo) {
-        Box(
-            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Column(
-                modifier = Modifier
-                    .width(60.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .clickable {
-                        packageManager.getLaunchIntentForPackage(app.activityInfo.packageName)?.let {
-                            it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION)
-                            startActivity(it)
-                        }
-                        toggleDrawer()
-                    }
-                    .padding(4.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Image(
-                    bitmap = app.loadIcon(packageManager).toBitmap().asImageBitmap(), 
-                    contentDescription = null, 
-                    modifier = Modifier.size(35.dp)
-                )
-                Text(
-                    app.loadLabel(packageManager).toString(), 
-                    style = MaterialTheme.typography.labelSmall, 
-                    maxLines = 1, 
-                    color = Color.White
-                )
             }
         }
     }
 
     private fun setupSystemOptionsOverlay() {
         vistaSystemOptions = ComposeView(this).apply {
-            setViewTreeLifecycleOwner(this@AccesibilidadService)
-            setViewTreeSavedStateRegistryOwner(this@AccesibilidadService)
+            setViewTreeLifecycleOwner(this@LauncherAccessibilityService)
+            setViewTreeSavedStateRegistryOwner(this@LauncherAccessibilityService)
 
             setContent {
                 LauncherCalmadoTheme {
@@ -424,19 +360,50 @@ class AccesibilidadService : AccessibilityService(), SavedStateRegistryOwner, Li
                     ) {
                         SystemOptionsPanel(
                             onSettingsClick = {
-                                startActivity(Intent(android.provider.Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION))
+                                startActivity(Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION))
                                 toggleSystemOptions()
                             },
                             onWifiClick = {
-                                startActivity(Intent(android.provider.Settings.ACTION_WIFI_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION))
+                                startActivity(Intent(Settings.ACTION_WIFI_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION))
                                 toggleSystemOptions()
                             },
                             onBluetoothClick = {
-                                startActivity(Intent(android.provider.Settings.ACTION_BLUETOOTH_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION))
+                                // En muchos dispositivos modernos, esto lleva a Connection Preferences / Connected Devices
+                                val intent = Intent("android.settings.CONNECTED_DEVICE_SETTINGS").apply {
+                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION)
+                                }
+                                try {
+                                    startActivity(intent)
+                                } catch (e: Exception) {
+                                    // Fallback al estándar si el anterior falla
+                                    startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS).apply {
+                                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION)
+                                    })
+                                }
                                 toggleSystemOptions()
                             },
-                            onAirplaneModeClick = { toggleAirplaneMode() },
-                            isAirplaneModeOn = isAirplaneModeOn,
+                            onMuteClick = { toggleMute() },
+                            onPowerClick = {
+                                performGlobalAction(GLOBAL_ACTION_POWER_DIALOG)
+                                toggleSystemOptions()
+                            },
+                            onScreenshotClick = {
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                                    performGlobalAction(GLOBAL_ACTION_TAKE_SCREENSHOT)
+                                } else {
+                                    Toast.makeText(this@LauncherAccessibilityService, "Captura no soportada", Toast.LENGTH_SHORT).show()
+                                }
+                                toggleSystemOptions()
+                            },
+                            onRecordClick = {
+                                if (!abrirGrabadorPantalla()) {
+                                    Toast.makeText(this@LauncherAccessibilityService, "El grabador de pantalla no está disponible en este dispositivo", Toast.LENGTH_SHORT).show()
+                                }
+                                toggleSystemOptions()
+                            },
+                            isWifiOn = isWifiOn,
+                            isBluetoothOn = isBluetoothOn,
+                            isMuted = isMuted,
                             currentBrightness = currentBrightness,
                             onBrightnessChange = { cambiarBrillo(it) },
                             isAutoBrightness = isAutoBrightness,
@@ -445,49 +412,12 @@ class AccesibilidadService : AccessibilityService(), SavedStateRegistryOwner, Li
                             onVolumeChange = { cambiarVolumen(it) },
                             modifier = Modifier
                                 .padding(bottom = 60.dp)
-                                .clickable(interactionSource = null, indication = null) { /* Consume */ }
+                                .clickable(interactionSource = null, indication = null) { /* Consume el click */ }
                         )
                     }
                 }
             }
         }
-    }
-
-    private fun setupBarraStatus(density: Float) {
-        val params = WindowManager.LayoutParams(
-            WindowManager.LayoutParams.MATCH_PARENT,
-            (40 * density).toInt(),
-            WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
-                    WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
-            PixelFormat.TRANSLUCENT
-        ).apply {
-            gravity = Gravity.TOP
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
-            }
-        }
-
-        vistaStatus = ComposeView(this).apply {
-            setViewTreeLifecycleOwner(this@AccesibilidadService)
-            setViewTreeSavedStateRegistryOwner(this@AccesibilidadService)
-
-            // Evitar saltos por insets del sistema
-            try {
-                val method = javaClass.getMethod("setConsumeWindowInsets", Boolean::class.javaPrimitiveType)
-                method.invoke(this, false)
-            } catch (e: Exception) {}
-
-            setContent {
-                LauncherCalmadoTheme {
-                    StatusBar(
-                        modifier = Modifier.fillMaxSize()
-                    )
-                }
-            }
-        }
-        windowManager.addView(vistaStatus, params)
     }
 
     private fun setupBarraNavegacion(density: Float) {
@@ -504,14 +434,8 @@ class AccesibilidadService : AccessibilityService(), SavedStateRegistryOwner, Li
         }
 
         vistaNav = ComposeView(this).apply {
-            setViewTreeLifecycleOwner(this@AccesibilidadService)
-            setViewTreeSavedStateRegistryOwner(this@AccesibilidadService)
-
-            // Evitar saltos por insets del sistema
-            try {
-                val method = javaClass.getMethod("setConsumeWindowInsets", Boolean::class.javaPrimitiveType)
-                method.invoke(this, false)
-            } catch (e: Exception) {}
+            setViewTreeLifecycleOwner(this@LauncherAccessibilityService)
+            setViewTreeSavedStateRegistryOwner(this@LauncherAccessibilityService)
 
             setContent {
                 LauncherCalmadoTheme {
@@ -519,10 +443,6 @@ class AccesibilidadService : AccessibilityService(), SavedStateRegistryOwner, Li
                         NavBar(
                             onActionClicked = { accion ->
                                 when (accion) {
-                                    "APPS" -> {
-                                        // No llamamos a toggleDrawer aquí para evitar doble ejecución
-                                        // El broadcast que enviamos abajo será captado por el receptor de este mismo servicio
-                                    }
                                     "GOOGLE" -> {
                                         val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com"))
                                         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION)
@@ -535,15 +455,12 @@ class AccesibilidadService : AccessibilityService(), SavedStateRegistryOwner, Li
                                         try { startActivity(intent) } catch (e: Exception) {}
                                     }
                                     "CLOCK" -> {
-                                        try {
-                                            val intent = Intent(AlarmClock.ACTION_SHOW_ALARMS)
-                                            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION)
-                                            startActivity(intent)
-                                        } catch (e: Exception) {
-                                            Toast.makeText(this@AccesibilidadService, "No se pudo abrir el reloj", Toast.LENGTH_SHORT).show()
+                                        if (!abrirRelojSistema()) {
+                                            Toast.makeText(this@LauncherAccessibilityService, "No se pudo encontrar la app de Reloj", Toast.LENGTH_SHORT).show()
                                         }
                                     }
                                 }
+                                // Notifica a la MainActivity y a otros componentes
                                 sendBroadcast(Intent("ACCION_BARRA").putExtra("comando", accion))
                             }, 
                             iconColor = iconColorNav,
@@ -557,15 +474,71 @@ class AccesibilidadService : AccessibilityService(), SavedStateRegistryOwner, Li
         windowManager.addView(vistaNav, params)
     }
 
-    private fun getInstalledApps(): List<ResolveInfo> {
-        return packageManager.queryIntentActivities(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER), 0)
+    private fun abrirGrabadorPantalla(): Boolean {
+        // Intentar abrir el grabador de pantalla nativo de Android 11+ (SystemUI)
+        val intents = arrayOf(
+            Intent().setComponent(android.content.ComponentName("com.android.systemui", "com.android.systemui.screenrecord.ScreenRecordDialog")),
+            Intent("com.android.systemui.screenrecord.START"),
+            Intent().setComponent(android.content.ComponentName("com.samsung.android.app.screenrecorder", "com.samsung.android.app.screenrecorder.ScreenRecorderService")), // Samsung
+            Intent().setComponent(android.content.ComponentName("com.miui.screenrecorder", "com.miui.screenrecorder.ActivityMain")) // Xiaomi
+        )
+
+        for (intent in intents) {
+            try {
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                startActivity(intent)
+                return true
+            } catch (e: Exception) {
+                // Continuar probando
+            }
+        }
+        return false
+    }
+
+    private fun abrirRelojSistema(): Boolean {
+        val paquetesReloj = arrayOf(
+            "com.google.android.deskclock",      // Google / Pixel
+            "com.android.deskclock",             // AOSP
+            "com.sec.android.app.clockpackage",  // Samsung
+            "com.sonyericsson.organizer",        // Sony
+            "com.huawei.deskclock",              // Huawei
+            "com.oppo.alarmclock",               // Oppo
+            "com.coloros.alarmclock",            // Realme/Oppo
+            "com.htc.android.worldclock",        // HTC
+            "com.motorola.blur.alarmclock",      // Motorola
+            "com.lge.clock"                      // LG
+        )
+
+        for (paquete in paquetesReloj) {
+            val intent = packageManager.getLaunchIntentForPackage(paquete)
+            if (intent != null) {
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION)
+                startActivity(intent)
+                return true
+            }
+        }
+        
+        // Fallback si no encontramos ninguno de los paquetes conocidos
+        return try {
+            val intent = Intent(android.provider.AlarmClock.ACTION_SHOW_ALARMS)
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION)
+            startActivity(intent)
+            true
+        } catch (e: Exception) {
+            false
+        }
     }
 
     private fun registrarReceptores() {
-        val themeFilter = IntentFilter("CAMBIO_TEMA")
-        themeFilter.addAction("COMANDO_SISTEMA")
-        themeFilter.addAction("ACCION_BARRA")
-        ContextCompat.registerReceiver(this, receptorComandos, themeFilter, ContextCompat.RECEIVER_EXPORTED)
+        val filter = IntentFilter().apply {
+            addAction("CAMBIO_TEMA")
+            addAction("COMANDO_SISTEMA")
+            addAction("ACCION_BARRA")
+            addAction(android.bluetooth.BluetoothAdapter.ACTION_STATE_CHANGED)
+            @Suppress("DEPRECATION")
+            addAction(android.net.ConnectivityManager.CONNECTIVITY_ACTION)
+        }
+        ContextCompat.registerReceiver(this, receptorComandos, filter, ContextCompat.RECEIVER_EXPORTED)
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {}
@@ -573,8 +546,8 @@ class AccesibilidadService : AccessibilityService(), SavedStateRegistryOwner, Li
 
     override fun onDestroy() {
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_DESTROY)
+        // Limpiamos todas las vistas del WindowManager para evitar fugas y errores
         if (::vistaNav.isInitialized) windowManager.removeView(vistaNav)
-        if (::vistaStatus.isInitialized) windowManager.removeView(vistaStatus)
         if (::vistaDrawer.isInitialized && vistaDrawer.parent != null) windowManager.removeView(vistaDrawer)
         if (::vistaSystemOptions.isInitialized && vistaSystemOptions.parent != null) windowManager.removeView(vistaSystemOptions)
         

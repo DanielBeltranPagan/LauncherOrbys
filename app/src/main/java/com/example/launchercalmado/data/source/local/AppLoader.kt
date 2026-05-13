@@ -1,29 +1,31 @@
-package com.example.launchercalmado.logic
+package com.example.launchercalmado.data.source.local
 
 import android.content.Context
 import android.content.Intent
-import com.example.launchercalmado.data.AppInfo
+import com.example.launchercalmado.data.model.AppInfo
 
 /**
- * Clase encargada de gestionar la carga de aplicaciones instaladas en el dispositivo.
+ * Clase encargada de cargar las aplicaciones instaladas en el dispositivo.
+ * Utiliza el PackageManager para consultar las apps que pueden ser lanzadas.
  */
+
 class AppLoader(private val context: Context) {
 
     /**
-     * Obtiene una lista de aplicaciones que tienen una actividad de lanzamiento (launcher).
-     * La lista se devuelve ordenada alfabéticamente por el nombre de la aplicación.
+     * Obtiene una lista de todas las aplicaciones instaladas que tienen una actividad principal (launcher).
+     * @return Lista de [AppInfo] ordenada alfabéticamente por nombre.
      */
     fun loadInstalledApps(): List<AppInfo> {
         val packageManager = context.packageManager
-
-        // Filtramos para obtener solo las aplicaciones que se pueden "abrir" desde el menú
+        // Filtramos solo las aplicaciones que aparecen en el menú de aplicaciones del sistema
         val intent = Intent(Intent.ACTION_MAIN, null).apply {
             addCategory(Intent.CATEGORY_LAUNCHER)
         }
-
+        
+        // Consultamos todas las actividades que coinciden con el filtro
         val availableActivities = packageManager.queryIntentActivities(intent, 0)
-
-        // Mapeamos los resultados de ResolveInfo a nuestro modelo AppInfo
+        
+        // Mapeamos los resultados a nuestro modelo de datos AppInfo
         val apps = availableActivities.map { resolveInfo ->
             AppInfo(
                 label = resolveInfo.loadLabel(packageManager).toString(),
@@ -31,8 +33,8 @@ class AppLoader(private val context: Context) {
                 icon = resolveInfo.loadIcon(packageManager)
             )
         }
-
-        // Retornamos la lista ordenada alfabéticamente (case-insensitive)
+        
+        // Devolvemos la lista ordenada ignorando mayúsculas/minúsculas
         return apps.sortedBy { it.label.lowercase() }
     }
 }

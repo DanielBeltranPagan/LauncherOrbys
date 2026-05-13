@@ -4,10 +4,17 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 
+/**
+ * Receptor de transmisiones (BroadcastReceiver) para detectar cambios en las apps instaladas.
+ * Se encarga de notificar cuando se instala, desinstala o actualiza una aplicación.
+ */
 class PackageReceiver(private val onAppsChanged: () -> Unit) : BroadcastReceiver() {
+
+    /**
+     * Se activa cuando el sistema envía un evento relacionado con los paquetes de aplicaciones.
+     */
     override fun onReceive(context: Context?, intent: Intent?) {
-        // Cuando hay un cambio en los paquetes (instalación, desinstalación o actualización)
-        // ejecutamos la función para recargar las apps
+        // Ejecutamos la función de retrollamada para que el repositorio recargue la lista de apps
         onAppsChanged()
     }
 }

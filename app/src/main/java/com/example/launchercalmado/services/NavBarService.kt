@@ -1,11 +1,10 @@
-package com.example.launchercalmado
+package com.example.launchercalmado.services
 
 import android.content.Context
 import android.content.Intent
 import android.graphics.PixelFormat
 import android.media.AudioManager
 import android.net.Uri
-import android.os.Build
 import android.provider.Settings
 import android.view.Gravity
 import android.view.WindowManager
@@ -30,39 +29,51 @@ import com.example.launchercalmado.ui.components.NavBar
 import com.example.launchercalmado.ui.components.SystemOptionsPanel
 import com.example.launchercalmado.ui.theme.LauncherCalmadoTheme
 
-class ServicioBarra : LifecycleService(), SavedStateRegistryOwner {
+/**
+ * NavBarService: Servicio encargado de gestionar y mostrar la barra de navegación personalizada
+ * y el panel de ajustes rápidos (SystemOptionsPanel) mediante overlays de WindowManager.
+ * Funciona de manera persistente sobre otras aplicaciones.
+ */
+class NavBarService : LifecycleService(), SavedStateRegistryOwner {
 
+    // Gestores de sistema para manejar ventanas y audio
     private lateinit var windowManager: WindowManager
     private lateinit var vistaNav: ComposeView
     private lateinit var vistaSystemOptions: ComposeView
 
-    // --- Estados reactivos para la UI ---
+    // Estados reactivos para la UI del panel de opciones
     private var systemOptionsVisible by mutableStateOf(false)
     private var currentBrightness by mutableStateOf(0.5f)
     private var isAutoBrightness by mutableStateOf(false)
     private var isAirplaneModeOn by mutableStateOf(false)
+    private var isWifiOn by mutableStateOf(false)
+    private var isBluetoothOn by mutableStateOf(false)
+    private var isMuted by mutableStateOf(false)
     private var currentVolume by mutableStateOf(0.5f)
     private lateinit var audioManager: AudioManager
 
+    // Implementación necesaria para usar Compose dentro de un Service
     private val savedStateRegistryController = SavedStateRegistryController.create(this)
     override val savedStateRegistry = savedStateRegistryController.savedStateRegistry
 
     override fun onCreate() {
+        // Restaurar estado si es necesario
         savedStateRegistryController.performRestore(null)
         super.onCreate()
 
+        // Inicialización de servicios del sistema
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
         audioManager = getSystemService(AUDIO_SERVICE) as AudioManager
         val density = resources.displayMetrics.density
 
-        // Preparamos el overlay de opciones del sistema antes de mostrarlo
+        // Configurar la vista del panel de opciones (se añade/quita dinámicamente)
         setupSystemOptionsOverlay()
         
-        // Configuración de la barra de navegación (tamaño, tipo de ventana y posición)
+        // Configuración de parámetros para la barra de navegación (overlay inferior)
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT,
-            (45 * density).toInt(), // Altura de la barra
-            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY, // Overlay sobre otras apps
+            (45 * density).toInt(), // Altura de 45dp
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                     WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
             PixelFormat.TRANSLUCENT
@@ -71,11 +82,12 @@ class ServicioBarra : LifecycleService(), SavedStateRegistryOwner {
             y = 0
         }
 
+        // Creación de la vista Compose para la barra de navegación
         vistaNav = ComposeView(this).apply {
-            setViewTreeLifecycleOwner(this@ServicioBarra)
-            setViewTreeSavedStateRegistryOwner(this@ServicioBarra)
+            setViewTreeLifecycleOwner(this@NavBarService)
+            setViewTreeSavedStateRegistryOwner(this@NavBarService)
 
-            // Evitamos que la barra consuma los insets del sistema (como el teclado)
+            // Evitar que la barra consuma insets para que se dibuje correctamente
             try {
                 val method = javaClass.getMethod("setConsumeWindowInsets", Boolean::class.javaPrimitiveType)
                 method.invoke(this, false)
@@ -87,6 +99,7 @@ class ServicioBarra : LifecycleService(), SavedStateRegistryOwner {
                 LauncherCalmadoTheme {
                     Box(modifier = Modifier.fillMaxSize()) {
                         NavBar(onActionClicked = { accion ->
+                            // Lógica para cada botón de la barra
                             when (accion) {
                                 "GOOGLE" -> {
                                     val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com"))
@@ -94,14 +107,15 @@ class ServicioBarra : LifecycleService(), SavedStateRegistryOwner {
                                     try { startActivity(intent) } catch (e: Exception) {}
                                 }
                                 "FILES" -> {
+                                    // Abrir el explorador de archivos predeterminado
                                     val intent = packageManager.getLaunchIntentForPackage("com.google.android.documentsui")
                                         ?: Intent(Intent.ACTION_GET_CONTENT).apply { type = "*/*" }
                                     intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                                     try { startActivity(intent) } catch (e: Exception) {}
                                 }
-                                "SYSTEM_OPTIONS" -> toggleSystemOptions() // Abre/Cierra el panel
+                                "SYSTEM_OPTIONS" -> toggleSystemOptions() // Mostrar/Ocultar panel
                             }
-                            // Notifica a otros componentes del sistema sobre la acción
+                            // Notificar acciones mediante broadcast si otros componentes lo necesitan
                             sendBroadcast(Intent("ACCION_BARRA").putExtra("comando", accion))
                             sendBroadcast(Intent("COMANDO_SISTEMA").putExtra("comando", accion))
                         })
@@ -109,16 +123,17 @@ class ServicioBarra : LifecycleService(), SavedStateRegistryOwner {
                 }
             }
         }
-        // Añadimos la vista de la barra a la pantalla
+        // Añadir la barra a la pantalla
         windowManager.addView(vistaNav, params)
     }
 
     /**
-     * Alterna la visibilidad del panel de opciones (Brillo, Volumen, Wi-Fi, etc.)
+     * Muestra u oculta el panel de opciones del sistema.
+     * Actualiza los valores actuales (brillo, volumen) antes de mostrarlo.
      */
     private fun toggleSystemOptions() {
         if (!systemOptionsVisible) {
-            actualizarValoresSistema() // Lee el brillo/volumen real antes de mostrar el panel
+            actualizarValoresSistema()
             systemOptionsVisible = true
             val params = WindowManager.LayoutParams(
                 WindowManager.LayoutParams.MATCH_PARENT,
@@ -137,20 +152,19 @@ class ServicioBarra : LifecycleService(), SavedStateRegistryOwner {
     }
 
     /**
-     * Define el diseño y comportamiento del panel de opciones (Overlay de pantalla completa)
+     * Prepara la vista del panel de opciones con Compose.
      */
     private fun setupSystemOptionsOverlay() {
         vistaSystemOptions = ComposeView(this).apply {
-            setViewTreeLifecycleOwner(this@ServicioBarra)
-            setViewTreeSavedStateRegistryOwner(this@ServicioBarra)
+            setViewTreeLifecycleOwner(this@NavBarService)
+            setViewTreeSavedStateRegistryOwner(this@NavBarService)
 
             setContent {
                 LauncherCalmadoTheme {
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
-                            // Cierra el panel si se toca fuera del recuadro central
-                            .clickable(interactionSource = null, indication = null) { toggleSystemOptions() },
+                            .clickable(interactionSource = null, indication = null) { toggleSystemOptions() }, // Cerrar al tocar fuera
                         contentAlignment = Alignment.BottomCenter
                     ) {
                         SystemOptionsPanel(
@@ -163,11 +177,34 @@ class ServicioBarra : LifecycleService(), SavedStateRegistryOwner {
                                 toggleSystemOptions()
                             },
                             onBluetoothClick = {
-                                startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                                val intent = Intent("android.settings.CONNECTED_DEVICE_SETTINGS").apply {
+                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                }
+                                try {
+                                    startActivity(intent)
+                                } catch (e: Exception) {
+                                    startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                                }
                                 toggleSystemOptions()
                             },
-                            onAirplaneModeClick = { toggleAirplaneMode() },
-                            isAirplaneModeOn = isAirplaneModeOn,
+                            onMuteClick = { toggleMute() },
+                            onPowerClick = {
+                                Toast.makeText(this@NavBarService, "Usa el botón físico para apagar", Toast.LENGTH_SHORT).show()
+                                toggleSystemOptions()
+                            },
+                            onScreenshotClick = {
+                                Toast.makeText(this@NavBarService, "Función solo disponible en modo persistente", Toast.LENGTH_SHORT).show()
+                                toggleSystemOptions()
+                            },
+                            onRecordClick = {
+                                if (!abrirGrabadorPantalla()) {
+                                    Toast.makeText(this@NavBarService, "Grabador no disponible", Toast.LENGTH_SHORT).show()
+                                }
+                                toggleSystemOptions()
+                            },
+                            isWifiOn = isWifiOn,
+                            isBluetoothOn = isBluetoothOn,
+                            isMuted = isMuted,
                             currentBrightness = currentBrightness,
                             onBrightnessChange = { cambiarBrillo(it) },
                             isAutoBrightness = isAutoBrightness,
@@ -176,7 +213,7 @@ class ServicioBarra : LifecycleService(), SavedStateRegistryOwner {
                             onVolumeChange = { cambiarVolumen(it) },
                             modifier = Modifier
                                 .padding(bottom = 60.dp)
-                                .clickable(interactionSource = null, indication = null) { /* Evita que el click pase al Box de abajo */ }
+                                .clickable(interactionSource = null, indication = null) { /* Evitar que el clic cierre el panel */ }
                         )
                     }
                 }
@@ -184,18 +221,37 @@ class ServicioBarra : LifecycleService(), SavedStateRegistryOwner {
         }
     }
 
+    private fun abrirGrabadorPantalla(): Boolean {
+        val intents = arrayOf(
+            Intent().setComponent(android.content.ComponentName("com.android.systemui", "com.android.systemui.screenrecord.ScreenRecordDialog")),
+            Intent("com.android.systemui.screenrecord.START"),
+            Intent().setComponent(android.content.ComponentName("com.samsung.android.app.screenrecorder", "com.samsung.android.app.screenrecorder.ScreenRecorderService")),
+            Intent().setComponent(android.content.ComponentName("com.miui.screenrecorder", "com.miui.screenrecorder.ActivityMain"))
+        )
+        for (intent in intents) {
+            try {
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                startActivity(intent)
+                return true
+            } catch (e: Exception) {}
+        }
+        return false
+    }
+
     /**
-     * Obtiene los niveles actuales de volumen y brillo del sistema
+     * Lee el estado actual del sistema (volumen, brillo, modo avión) para sincronizar la UI.
      */
     private fun actualizarValoresSistema() {
-        // Obtener Volumen Multimedia (0.0 a 1.0)
+        // Obtener volumen actual
         val maxVol = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
         if (maxVol > 0) {
             val curVol = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
             currentVolume = curVol.toFloat() / maxVol
         }
 
-        // Obtener Brillo de Pantalla (0.0 a 1.0)
+        isMuted = audioManager.isStreamMute(AudioManager.STREAM_MUSIC)
+
+        // Obtener brillo y modo automático
         try {
             val curBright = Settings.System.getInt(contentResolver, Settings.System.SCREEN_BRIGHTNESS)
             currentBrightness = curBright.toFloat() / 255f
@@ -207,16 +263,34 @@ class ServicioBarra : LifecycleService(), SavedStateRegistryOwner {
             isAutoBrightness = false
         }
 
-        // Obtener estado del Modo Avión
+        // Obtener estado del modo avión
         try {
             isAirplaneModeOn = Settings.Global.getInt(contentResolver, Settings.Global.AIRPLANE_MODE_ON, 0) != 0
         } catch (e: Exception) {
             isAirplaneModeOn = false
         }
+
+        // Obtener estado de Wi-Fi y Bluetooth
+        try {
+            val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
+            val network = cm.activeNetwork
+            val caps = cm.getNetworkCapabilities(network)
+            isWifiOn = caps?.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI) == true
+        } catch (e: Exception) {
+            isWifiOn = false
+        }
+
+        try {
+            val btAdapter = android.bluetooth.BluetoothAdapter.getDefaultAdapter()
+            isBluetoothOn = btAdapter?.isEnabled == true
+        } catch (e: Exception) {
+            isBluetoothOn = false
+        }
     }
 
     /**
-     * Alterna el modo avión si tiene permisos, o abre los ajustes
+     * Intenta cambiar el modo avión. Debido a restricciones de Android moderno,
+     * si falla (SecurityException) redirige a los ajustes del sistema.
      */
     private fun toggleAirplaneMode() {
         val nuevoEstado = if (isAirplaneModeOn) 0 else 1
@@ -232,7 +306,7 @@ class ServicioBarra : LifecycleService(), SavedStateRegistryOwner {
     }
 
     /**
-     * Alterna entre brillo automático y manual
+     * Cambia entre brillo automático y manual. Requiere permiso de escritura de ajustes.
      */
     private fun cambiarModoBrillo(auto: Boolean) {
         if (Settings.System.canWrite(this)) {
@@ -244,6 +318,9 @@ class ServicioBarra : LifecycleService(), SavedStateRegistryOwner {
         }
     }
 
+    /**
+     * Muestra la pantalla de configuración para otorgar permisos de escritura de ajustes de sistema.
+     */
     private fun solicitarPermisoEscritura() {
         val intent = Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS)
         intent.data = Uri.parse("package:$packageName")
@@ -253,17 +330,23 @@ class ServicioBarra : LifecycleService(), SavedStateRegistryOwner {
     }
 
     /**
-     * Aplica el nuevo volumen al flujo de música
+     * Ajusta el volumen del flujo de música.
      */
     private fun cambiarVolumen(valor: Float) {
         val maxVol = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
         val newVol = (valor * maxVol).toInt()
         audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, newVol, 0)
         currentVolume = valor
+        if (valor > 0f) isMuted = false
+    }
+
+    private fun toggleMute() {
+        isMuted = !isMuted
+        audioManager.adjustStreamVolume(AudioManager.STREAM_MUSIC, if (isMuted) AudioManager.ADJUST_MUTE else AudioManager.ADJUST_UNMUTE, 0)
     }
 
     /**
-     * Aplica el nuevo brillo a la pantalla. Requiere permiso de escritura de ajustes.
+     * Ajusta el nivel de brillo de la pantalla. Requiere permiso de escritura.
      */
     private fun cambiarBrillo(valor: Float) {
         if (Settings.System.canWrite(this)) {
@@ -271,14 +354,15 @@ class ServicioBarra : LifecycleService(), SavedStateRegistryOwner {
             Settings.System.putInt(contentResolver, Settings.System.SCREEN_BRIGHTNESS, newBright)
             currentBrightness = valor
         } else {
-            // Si no tiene permiso, abre la pantalla de ajustes del sistema para concederlo
             solicitarPermisoEscritura()
         }
     }
 
+    /**
+     * Limpieza de vistas al destruir el servicio para evitar fugas de memoria o overlays huérfanos.
+     */
     override fun onDestroy() {
         super.onDestroy()
-        // Limpieza de vistas al detener el servicio
         if (::vistaNav.isInitialized) windowManager.removeView(vistaNav)
         if (::vistaSystemOptions.isInitialized && vistaSystemOptions.parent != null) windowManager.removeView(vistaSystemOptions)
     }

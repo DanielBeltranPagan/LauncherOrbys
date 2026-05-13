@@ -25,6 +25,10 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 
+/**
+ * Componente que muestra la barra de estado superior personalizada.
+ * Actualmente incluye indicadores de conectividad (Bluetooth y WiFi).
+ */
 @Composable
 fun StatusBar(
     modifier: Modifier = Modifier
@@ -35,42 +39,46 @@ fun StatusBar(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 4.dp),
-        horizontalArrangement = Arrangement.End,
+        horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.End),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Solo iconos de conectividad (BT y WiFi)
+        // Secciones de iconos de conectividad con fondo circular
         BluetoothSection(context = context)
-        Spacer(modifier = Modifier.width(12.dp))
         WifiSection(context = context)
     }
 }
 
 /**
- * Componente base para los iconos de la barra de estado con fondo circular.
+ * Componente base para los iconos de la barra de estado con fondo circular y efecto de click.
  */
 @Composable
 fun StatusIcon(
     imageVector: ImageVector,
     contentDescription: String,
     onClick: () -> Unit,
-    isEnabled: Boolean = true
+    isVisible: Boolean = true
 ) {
-    Box(
-        modifier = Modifier
-            .size(32.dp)
-            .background(Color.White, shape = CircleShape)
-            .clickable { onClick() },
-        contentAlignment = Alignment.Center
-    ) {
-        Icon(
-            imageVector = imageVector,
-            contentDescription = contentDescription,
-            tint = if (isEnabled) Color.Black else Color.Black.copy(alpha = 0.3f),
-            modifier = Modifier.size(18.dp)
-        )
+    if (isVisible) {
+        Box(
+            modifier = Modifier
+                .size(32.dp)
+                .background(Color.White, shape = CircleShape)
+                .clickable { onClick() },
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = imageVector,
+                contentDescription = contentDescription,
+                tint = Color.Black,
+                modifier = Modifier.size(18.dp)
+            )
+        }
     }
 }
 
+/**
+ * Gestiona el estado y la visualización del icono de Bluetooth.
+ */
 @Composable
 fun BluetoothSection(context: Context) {
     val bluetoothAdapter = remember { 
@@ -79,6 +87,7 @@ fun BluetoothSection(context: Context) {
     }
     var isBluetoothEnabled by remember { mutableStateOf(bluetoothAdapter?.isEnabled == true) }
 
+    // Escucha cambios en el estado del Bluetooth mediante un BroadcastReceiver
     DisposableEffect(context) {
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context?, intent: Intent?) {
@@ -90,16 +99,17 @@ fun BluetoothSection(context: Context) {
         }
         context.registerReceiver(receiver, IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED))
         onDispose {
-            context.unregisterReceiver(receiver)
+            try { context.unregisterReceiver(receiver) } catch (e: Exception) {}
         }
     }
 
     if (bluetoothAdapter != null) {
         StatusIcon(
-            imageVector = if (isBluetoothEnabled) Icons.Default.Bluetooth else Icons.Default.BluetoothDisabled,
+            imageVector = Icons.Default.Bluetooth,
             contentDescription = "Bluetooth",
-            isEnabled = isBluetoothEnabled,
+            isVisible = isBluetoothEnabled,
             onClick = {
+                // Abre los ajustes de Bluetooth al pulsar
                 context.startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS).apply {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 })
@@ -108,11 +118,15 @@ fun BluetoothSection(context: Context) {
     }
 }
 
+/**
+ * Gestiona el estado y la visualización del icono de WiFi.
+ */
 @Composable
 fun WifiSection(context: Context) {
     val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
     var isWifiEnabled by remember { mutableStateOf(false) }
 
+    // Utiliza NetworkCallbacks para detectar cambios en la conectividad en tiempo real
     DisposableEffect(context) {
         val callback = object : ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: Network) {
@@ -128,18 +142,23 @@ fun WifiSection(context: Context) {
             }
         }
 
-        connectivityManager.registerDefaultNetworkCallback(callback)
+        try {
+            connectivityManager.registerDefaultNetworkCallback(callback)
+        } catch (e: Exception) {
+            // Fallback para versiones donde registerDefaultNetworkCallback pueda fallar o no ser adecuado
+        }
 
         onDispose {
-            connectivityManager.unregisterNetworkCallback(callback)
+            try { connectivityManager.unregisterNetworkCallback(callback) } catch (e: Exception) {}
         }
     }
 
     StatusIcon(
-        imageVector = if (isWifiEnabled) Icons.Default.Wifi else Icons.Default.WifiOff,
+        imageVector = Icons.Default.Wifi,
         contentDescription = "WiFi",
-        isEnabled = isWifiEnabled,
+        isVisible = isWifiEnabled,
         onClick = {
+            // Abre los ajustes de WiFi al pulsar
             context.startActivity(Intent(Settings.ACTION_WIFI_SETTINGS).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             })

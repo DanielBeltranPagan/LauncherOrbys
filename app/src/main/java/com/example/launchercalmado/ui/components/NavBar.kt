@@ -10,6 +10,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -17,6 +18,10 @@ import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.*
 
+/**
+ * Barra de navegación personalizada del launcher.
+ * Incluye controles de navegación del sistema, accesos rápidos y un reloj.
+ */
 @Composable
 fun NavBar(
     onActionClicked: (String) -> Unit,
@@ -30,12 +35,12 @@ fun NavBar(
         }
     }
     
-    // Estado inicial
+    // Estado reactivo para la hora actual
     var currentTime by remember { 
         mutableStateOf(timeFormatter.format(Date())) 
     }
 
-    // Efecto para actualizar la hora cada segundo
+    // Bucle que actualiza la hora cada segundo mientras el componente esté activo
     LaunchedEffect(Unit) {
         while (true) {
             currentTime = timeFormatter.format(Date())
@@ -48,43 +53,28 @@ fun NavBar(
         modifier = Modifier.fillMaxSize()
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
-            // Fila central con los iconos de navegación
+            // Fila central con los iconos de navegación y accesos rápidos
             Row(
                 modifier = Modifier.fillMaxSize(),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.Center
             ) {
-                IconButton(onClick = { onActionClicked("BACK") }) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = iconColor, modifier = Modifier.size(24.dp))
-                }
+                NavBarIcon(Icons.AutoMirrored.Filled.ArrowBack, iconColor) { onActionClicked("BACK") }
                 Spacer(modifier = Modifier.width(15.dp))
-                IconButton(onClick = { onActionClicked("HOME") }) {
-                    Icon(Icons.Default.Home, null, tint = iconColor, modifier = Modifier.size(24.dp))
-                }
+                NavBarIcon(Icons.Default.Home, iconColor) { onActionClicked("HOME") }
                 Spacer(modifier = Modifier.width(15.dp))
-                IconButton(onClick = { onActionClicked("RECENTS") }) {
-                    Icon(Icons.Default.CropSquare, null, tint = iconColor, modifier = Modifier.size(24.dp))
-                }
+                NavBarIcon(Icons.Default.CropSquare, iconColor) { onActionClicked("RECENTS") }
                 Spacer(modifier = Modifier.width(15.dp))
-                IconButton(onClick = { onActionClicked("APPS") }) {
-                    Icon(Icons.Default.Apps, null, tint = iconColor, modifier = Modifier.size(24.dp))
-                }
+                NavBarIcon(Icons.Default.Apps, iconColor) { onActionClicked("APPS") }
                 Spacer(modifier = Modifier.width(15.dp))
-                IconButton(onClick = { onActionClicked("GOOGLE") }) {
-                    Icon(Icons.Default.Search, null, tint = iconColor, modifier = Modifier.size(24.dp))
-                }
+                NavBarIcon(Icons.Default.Search, iconColor) { onActionClicked("GOOGLE") }
                 Spacer(modifier = Modifier.width(15.dp))
-                IconButton(onClick = { onActionClicked("FILES") }) {
-                    Icon(Icons.Default.Folder, null, tint = iconColor, modifier = Modifier.size(24.dp))
-                }
+                NavBarIcon(Icons.Default.Folder, iconColor) { onActionClicked("FILES") }
                 Spacer(modifier = Modifier.width(15.dp))
-                IconButton(onClick = { onActionClicked("SYSTEM_OPTIONS") }) {
-                    Icon(Icons.Default.Tune, null, tint = iconColor, modifier = Modifier.size(24.dp))
-                }
+                NavBarIcon(Icons.Default.Tune, iconColor) { onActionClicked("SYSTEM_OPTIONS") }
             }
 
             // Reloj en el lateral izquierdo
-            // Lo ponemos en un Box alineado para que no interfiera con el centrado del Row
             Box(
                 modifier = Modifier
                     .fillMaxHeight()
@@ -101,5 +91,24 @@ fun NavBar(
                 )
             }
         }
+    }
+}
+
+/**
+ * Componente interno para estandarizar los iconos de la barra de navegación.
+ */
+@Composable
+private fun NavBarIcon(
+    icon: ImageVector,
+    color: Color,
+    onClick: () -> Unit
+) {
+    IconButton(onClick = onClick) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = color,
+            modifier = Modifier.size(24.dp)
+        )
     }
 }
