@@ -1,5 +1,5 @@
 <resources>
-    <style name="Theme.LauncherCalmado" parent="Theme.Material3.DayNight.NoActionBar">
+    <style name="Theme.LauncherOrbys" parent="Theme.Material3.DayNight.NoActionBar">
         <!-- Permite que se vea el fondo de pantalla del sistema -->
         <item name="android:windowShowWallpaper">true</item>
         <!-- Hace que las barras de sistema sean transparentes -->

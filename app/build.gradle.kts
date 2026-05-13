@@ -5,11 +5,11 @@ plugins {
 }
 
 android {
-    namespace = "com.example.launchercalmado"
+    namespace = "com.example.launcherorbys"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.example.launchercalmado"
+        applicationId = "com.example.launcherorbys"
         minSdk = 24 // Compatible desde Android 7.0 Nougat
         targetSdk = 35
         versionCode = 1
