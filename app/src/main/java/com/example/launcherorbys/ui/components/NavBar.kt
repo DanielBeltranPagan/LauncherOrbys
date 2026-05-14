@@ -5,7 +5,6 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
@@ -36,13 +35,11 @@ fun NavBar(
     isAtTop: Boolean = false,
     isExpanded: Boolean = true
 ) {
-    val height by animateDpAsState(targetValue = if (isExpanded) 48.dp else 20.dp, label = "navHeight")
+    val height by animateDpAsState(targetValue = if (isExpanded) 48.dp else 0.dp, label = "navHeight")
     val contentAlpha by animateFloatAsState(targetValue = if (isExpanded) 1f else 0f, label = "contentAlpha")
     
     val timeFormatter = remember { 
-        SimpleDateFormat("HH:mm", Locale.getDefault()).apply {
-            timeZone = TimeZone.getTimeZone("Europe/Madrid")
-        }
+        SimpleDateFormat("HH:mm", Locale.getDefault())
     }
     
     var currentTime by remember { 
@@ -112,26 +109,8 @@ fun NavBar(
                         icon = if (isAtTop) Icons.Default.KeyboardArrowDown else Icons.Default.KeyboardArrowUp,
                         color = iconColor
                     ) { onActionClicked("TOGGLE_NAVBAR_POSITION") }
-                    
-                    IconButton(onClick = { onActionClicked("TOGGLE_NAVBAR_VISIBILITY") }) {
-                        Icon(Icons.Default.Remove, null, tint = iconColor, modifier = Modifier.size(30.dp))
-                    }
                 }
             }
-        } else {
-            // Tirador central más grande para facilitar la apertura
-            Box(
-                modifier = Modifier
-                    .width(120.dp)
-                    .height(12.dp)
-                    .padding(bottom = if (isAtTop) 0.dp else 4.dp, top = if (isAtTop) 4.dp else 0.dp)
-                    .background(
-                        color = iconColor.copy(alpha = 0.6f),
-                        shape = RoundedCornerShape(6.dp)
-                    )
-                    .clickable { onActionClicked("TOGGLE_NAVBAR_VISIBILITY") }
-                    .align(if (isAtTop) Alignment.TopCenter else Alignment.BottomCenter)
-            )
         }
     }
 }
