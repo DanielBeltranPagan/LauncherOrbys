@@ -4,11 +4,16 @@ import android.content.Context
 import android.content.Intent
 import com.example.launcherorbys.data.model.AppInfo
 
+/**
+ * Cargador de datos encargado de consultar el sistema Android para obtener las aplicaciones instaladas.
+ * Utiliza el PackageManager para filtrar solo aquellas que pueden ser lanzadas por el usuario.
+ */
 class AppLoader(private val context: Context) {
 
     /**
-     * Esta función recupera todas las apps instaladas que tienen una "puerta de entrada"
-     * (un icono en el cajón de aplicaciones).
+     * Recupera todas las aplicaciones instaladas que tienen una actividad principal con la categoría LAUNCHER.
+     * 
+     * @return Una lista de objetos [AppInfo] ordenada alfabéticamente por etiqueta.
      */
     fun loadInstalledApps(): List<AppInfo> {
         // El PackageManager es el "bibliotecario" del sistema Android

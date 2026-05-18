@@ -2,7 +2,6 @@ package com.example.launcherorbys.ui.components
 
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -20,17 +19,22 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.dp
 
+/**
+ * Barra lateral táctil para navegación rápida.
+ * Permite realizar acciones de navegación (Atrás, Inicio, Recientes) y controlar la visibilidad de la NavBar.
+ */
 @Composable
 fun SideNavBar(
-    isLeft: Boolean,
-    onAction: (String) -> Unit,
-    onDrag: (Float) -> Unit,
+    isLeft: Boolean,            // Indica si la barra está a la izquierda o derecha
+    onAction: (String) -> Unit, // Callback para ejecutar comandos (BACK, HOME, etc.)
+    onDrag: (Float) -> Unit,    // Maneja el desplazamiento vertical de la barra
     isNavBarVisible: Boolean = true,
     isNavBarAtTop: Boolean = false,
     modifier: Modifier = Modifier,
     onHeightChanged: (Int) -> Unit = {}
 ) {
     var isExpanded by remember { mutableStateOf(true) }
+    // Animación suave del ancho al contraer/expandir
     val width by animateDpAsState(targetValue = if (isExpanded) 44.dp else 24.dp, label = "width")
     
     Box(
@@ -39,6 +43,7 @@ fun SideNavBar(
             .heightIn(min = if (isExpanded) 200.dp else 60.dp)
             .onSizeChanged { onHeightChanged(it.height) }
             .pointerInput(Unit) {
+                // Permite arrastrar la barra verticalmente por la pantalla
                 detectDragGestures { change, dragAmount ->
                     change.consume()
                     onDrag(dragAmount.y)
@@ -60,18 +65,21 @@ fun SideNavBar(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             // Botón de Contraer/Expandir Sidebar
-            Icon(
-                imageVector = if (isExpanded) {
-                    if (isLeft) Icons.AutoMirrored.Filled.KeyboardArrowLeft else Icons.AutoMirrored.Filled.KeyboardArrowRight
-                } else {
-                    if (isLeft) Icons.AutoMirrored.Filled.KeyboardArrowRight else Icons.AutoMirrored.Filled.KeyboardArrowLeft
-                },
-                contentDescription = "Toggle Sidebar",
-                tint = Color.White.copy(alpha = 0.5f),
-                modifier = Modifier
-                    .size(24.dp)
-                    .clickable { isExpanded = !isExpanded }
-            )
+            IconButton(
+                onClick = { isExpanded = !isExpanded },
+                modifier = Modifier.size(36.dp)
+            ) {
+                Icon(
+                    imageVector = if (isExpanded) {
+                        if (isLeft) Icons.AutoMirrored.Filled.KeyboardArrowLeft else Icons.AutoMirrored.Filled.KeyboardArrowRight
+                    } else {
+                        if (isLeft) Icons.AutoMirrored.Filled.KeyboardArrowRight else Icons.AutoMirrored.Filled.KeyboardArrowLeft
+                    },
+                    contentDescription = "Toggle Sidebar",
+                    tint = Color.White.copy(alpha = 0.5f),
+                    modifier = Modifier.size(24.dp)
+                )
+            }
 
             if (isExpanded) {
                 // Botón Back
@@ -88,8 +96,6 @@ fun SideNavBar(
                 IconButton(onClick = { onAction("RECENTS") }, modifier = Modifier.size(36.dp)) {
                     Icon(Icons.Default.CropSquare, "Recientes", tint = Color.White)
                 }
-
-                Spacer(modifier = Modifier.height(4.dp))
 
                 // Botón NavBar Toggle (Flechas según posición y visibilidad)
                 IconButton(onClick = { onAction("TOGGLE_NAVBAR_VISIBILITY") }, modifier = Modifier.size(36.dp)) {

@@ -1,6 +1,5 @@
 package com.example.launcherorbys
 
-import android.app.AlertDialog
 import android.app.WallpaperColors
 import android.app.WallpaperManager
 import android.content.*
@@ -24,9 +23,15 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import com.example.launcherorbys.services.LauncherAccessibilityService
+import androidx.lifecycle.lifecycleScope
 import com.example.launcherorbys.ui.home.HomeScreen
 import com.example.launcherorbys.ui.home.HomeViewModel
+import com.example.launcherorbys.ui.setup.PermissionItem
+import com.example.launcherorbys.ui.setup.PermissionScreen
 import com.example.launcherorbys.ui.theme.LauncherOrbysTheme
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 
 /**
  * Actividad principal que sirve como punto de entrada y contenedor de la pantalla de inicio.
@@ -35,7 +40,13 @@ import com.example.launcherorbys.ui.theme.LauncherOrbysTheme
 class MainActivity : ComponentActivity() {
 
     private val viewModel: HomeViewModel by viewModels()
-    private var showingPermissionDialog = false
+    
+    // Estados de permisos para la pantalla de configuración
+    private var isDefault by mutableStateOf(false)
+    private var canDrawOverlays by mutableStateOf(false)
+    private var isAccessibilityOn by mutableStateOf(false)
+    private var canWriteSettings by mutableStateOf(false)
+    private var initialAllGranted by mutableStateOf(false)
 
     // Escucha acciones externas para cerrar menús o actualizar UI
     private val receptorBarra = object : BroadcastReceiver() {
@@ -65,13 +76,85 @@ class MainActivity : ComponentActivity() {
 
         registerReceivers()
         setupWallpaperListener()
-        checkPermissions()
+        updatePermissionStates()
+        initialAllGranted = isDefault && canDrawOverlays && isAccessibilityOn && canWriteSettings
 
         setContent {
             LauncherOrbysTheme {
                 CompositionLocalProvider(LocalOverscrollConfiguration provides null) {
-                    HomeScreen(viewModel = viewModel, onPersonalizarClick = { openWallpaperPicker() })
+                    val allGranted = isDefault && canDrawOverlays && isAccessibilityOn && canWriteSettings
+
+                    if (!allGranted) {
+                        val permissionsList = listOf(
+                            PermissionItem(
+                                "Lanzador Predeterminado",
+                                "Establece Orbys como tu pantalla de inicio principal.",
+                                isDefault,
+                                { 
+                                    startActivity(Intent(Settings.ACTION_HOME_SETTINGS))
+                                    autoReturnCheck { isDefaultLauncher() }
+                                }
+                            ),
+                            PermissionItem(
+                                "Superposición de Pantalla",
+                                "Permite mostrar la barra de navegación y paneles sobre otras apps.",
+                                canDrawOverlays,
+                                { 
+                                    startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
+                                    autoReturnCheck { Settings.canDrawOverlays(this) }
+                                }
+                            ),
+                            PermissionItem(
+                                "Ajustes del Sistema",
+                                "Permite al launcher controlar el brillo de la pantalla.",
+                                canWriteSettings,
+                                { 
+                                    startActivity(Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS, Uri.parse("package:$packageName")))
+                                    autoReturnCheck { Settings.System.canWrite(this) }
+                                }
+                            ),
+                            PermissionItem(
+                                "Servicio de Accesibilidad",
+                                "Necesario para los gestos del sistema (Atrás, Recientes) y la UI.",
+                                isAccessibilityOn,
+                                { 
+                                    startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                                    autoReturnCheck { isAccessibilityEnabled() }
+                                }
+                            )
+                        )
+                        
+                        PermissionScreen(
+                            permissions = permissionsList,
+                            onContinue = { /* Ya no es necesario el click */ },
+                            allGranted = allGranted
+                        )
+                    } else {
+                        HomeScreen(viewModel = viewModel, onPersonalizarClick = { openWallpaperPicker() })
+                    }
                 }
+            }
+        }
+    }
+
+    /**
+     * Monitoriza en segundo plano si un permiso ha sido concedido y trae la app al frente.
+     */
+    private fun autoReturnCheck(check: () -> Boolean) {
+        lifecycleScope.launch {
+            // Esperar un poco a que el usuario llegue a la pantalla de ajustes
+            delay(1000)
+            while (isActive) {
+                if (check()) {
+                    // Si el permiso se concedió, actualizar estados y volver a la app
+                    updatePermissionStates()
+                    val intent = Intent(this@MainActivity, MainActivity::class.java).apply {
+                        addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+                    }
+                    startActivity(intent)
+                    break
+                }
+                delay(1000) // Comprobar cada segundo
             }
         }
     }
@@ -89,9 +172,14 @@ class MainActivity : ComponentActivity() {
         registerReceiver(receptorWallpaper, IntentFilter(Intent.ACTION_WALLPAPER_CHANGED))
     }
 
+    /**
+     * Configura la escucha de cambios de color en el fondo de pantalla del sistema (Android 8.1+).
+     * Esto permite que el launcher adapte su tema automáticamente al cambiar el wallpaper.
+     */
     private fun setupWallpaperListener() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
             WallpaperManager.getInstance(this).addOnColorsChangedListener({ colors, _ ->
+                // Solo actualizamos si el usuario no ha establecido un fondo personalizado manual
                 if (viewModel.uriImagenFondo == null && viewModel.colorSolido == null) {
                     updateColors(colors)
                 }
@@ -99,11 +187,15 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /**
+     * Abre el selector de fondos de pantalla del sistema.
+     */
     private fun openWallpaperPicker() {
         try {
             startActivity(Intent(Intent.ACTION_SET_WALLPAPER))
         } catch (e: Exception) {
             try {
+                // Intento alternativo para fondos animados si el anterior falla
                 startActivity(Intent(WallpaperManager.ACTION_CHANGE_LIVE_WALLPAPER))
             } catch (e2: Exception) {
                 Toast.makeText(this, "Error abriendo selector", Toast.LENGTH_SHORT).show()
@@ -112,45 +204,28 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
-     * Verifica que el launcher tenga los permisos necesarios (Superposición, Accesibilidad)
-     * y sea el launcher predeterminado.
+     * Verifica que el launcher tenga los permisos necesarios y actualiza el estado reactivo.
+     * Comprueba: Lanzador predeterminado, superposición, servicios de accesibilidad y ajustes.
      */
-    private fun checkPermissions() {
-        if (showingPermissionDialog) return
-        
-        if (!isDefaultLauncher()) {
-            showLauncherDialog()
-            return
-        }
-
-        if (!Settings.canDrawOverlays(this)) { 
-            showingPermissionDialog = true
-            startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName"))) 
-        } else if (!isAccessibilityEnabled()) { 
-            showingPermissionDialog = true
-            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) 
-        }
+    private fun updatePermissionStates() {
+        isDefault = isDefaultLauncher()
+        canDrawOverlays = Settings.canDrawOverlays(this)
+        isAccessibilityOn = isAccessibilityEnabled()
+        canWriteSettings = Settings.System.canWrite(this)
     }
 
-    private fun showLauncherDialog() {
-        showingPermissionDialog = true
-        AlertDialog.Builder(this)
-            .setTitle("Configurar Launcher")
-            .setMessage("Pon Launcher Orbys como predeterminado para que funcione mejor.")
-            .setPositiveButton("Ir") { _, _ -> 
-                showingPermissionDialog = false
-                startActivity(Intent(Settings.ACTION_HOME_SETTINGS)) 
-            }
-            .setNegativeButton("Luego") { _, _ -> showingPermissionDialog = false }
-            .show()
-    }
-
+    /**
+     * Comprueba si esta aplicación es la pantalla de inicio predeterminada del sistema.
+     */
     private fun isDefaultLauncher(): Boolean {
         val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
         val resolveInfo = packageManager.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY)
         return resolveInfo?.activityInfo?.packageName == packageName
     }
 
+    /**
+     * Comprueba si el servicio de accesibilidad de la aplicación está activado.
+     */
     private fun isAccessibilityEnabled(): Boolean {
         val expected = ComponentName(this, LauncherAccessibilityService::class.java).flattenToString()
         val enabled = Settings.Secure.getString(contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES) ?: return false
@@ -202,7 +277,7 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         setupTransitions()
         hideStatusBar()
-        checkPermissions() 
+        updatePermissionStates()
     }
 
     override fun onNewIntent(intent: Intent) {

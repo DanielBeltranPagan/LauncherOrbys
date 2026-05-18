@@ -142,7 +142,10 @@ private fun AppItem(
                 .width(60.dp)
                 .clip(RoundedCornerShape(12.dp))
                 .clickable {
+                    // METODO 1: Abrir por nombre de paquete (Usado para apps instaladas)
+                    // Buscamos la "puerta de entrada" principal de la aplicación
                     context.packageManager.getLaunchIntentForPackage(app.packageName)?.let { intent ->
+                        // Añadimos banderas para que se abra como una nueva tarea y sin animaciones bruscas
                         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION)
                         context.startActivity(intent)
                     }

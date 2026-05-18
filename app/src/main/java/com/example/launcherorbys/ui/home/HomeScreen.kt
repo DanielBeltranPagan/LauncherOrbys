@@ -31,6 +31,10 @@ import androidx.core.content.ContextCompat
 import com.example.launcherorbys.ui.components.StatusBar
 import kotlin.math.roundToInt
 
+/**
+ * Pantalla principal del Launcher.
+ * Gestiona el fondo de pantalla, gestos (toque largo para menú) y la integración con la barra de navegación.
+ */
 @Composable
 fun HomeScreen(
     viewModel: HomeViewModel,
@@ -38,7 +42,7 @@ fun HomeScreen(
 ) {
     val context = LocalContext.current
 
-    // Escuchar el cambio de posición de la NavBar para adaptar la UI
+    // Escucha el cambio de posición de la NavBar para adaptar el padding superior de la UI
     DisposableEffect(context) {
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context?, intent: Intent?) {
@@ -106,17 +110,26 @@ fun HomeScreen(
     }
 }
 
+/**
+ * Menú flotante que aparece tras un toque largo en la pantalla de inicio.
+ * 
+ * @param posicion Coordenadas donde se debe mostrar el menú.
+ * @param onPersonalizarClick Acción al pulsar en personalización.
+ * @param onDismiss Acción para cerrar el menú.
+ */
 @Composable
 fun BoxWithConstraintsScope.MenuContextual(
     posicion: Offset, 
     onPersonalizarClick: () -> Unit, 
     onDismiss: () -> Unit
 ) {
+    // Capa invisible para detectar clicks fuera del menú y cerrarlo
     Box(modifier = Modifier.fillMaxSize().clickable { onDismiss() })
     
     Card(
         modifier = Modifier
             .offset { 
+                // Calculamos la posición asegurándonos de que el menú no se salga de los bordes de la pantalla
                 IntOffset(
                     posicion.x.roundToInt().coerceIn(0, (constraints.maxWidth - 220.dp.toPx().toInt()).coerceAtLeast(0)), 
                     posicion.y.roundToInt().coerceIn(0, (constraints.maxHeight - 80.dp.toPx().toInt()).coerceAtLeast(0))
