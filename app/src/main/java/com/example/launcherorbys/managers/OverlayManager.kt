@@ -1,11 +1,7 @@
 package com.example.launcherorbys.managers
 
 import android.accessibilityservice.AccessibilityService
-import android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK
-import android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_HOME
-import android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_POWER_DIALOG
-import android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_RECENTS
-import android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_TAKE_SCREENSHOT
+import android.accessibilityservice.AccessibilityService.*
 import android.content.Context
 import android.content.Intent
 import android.graphics.PixelFormat
@@ -28,19 +24,20 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.setViewTreeLifecycleOwner
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
-import com.example.launcherorbys.ui.components.AppDrawer
-import com.example.launcherorbys.ui.components.NavBar
-import com.example.launcherorbys.ui.components.SideNavBar
-import com.example.launcherorbys.ui.components.SystemOptionsPanel
+import com.example.launcherorbys.ui.components.*
 import com.example.launcherorbys.ui.theme.LauncherOrbysTheme
+import com.example.launcherorbys.utils.Constants
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 /**
- * Gestiona todas las capas de superposición (overlays) de la interfaz de usuario del Launcher.
- * Se encarga de crear, actualizar y destruir las vistas de Compose que se muestran sobre el sistema.
- * Utiliza el [WindowManager] para insertar las vistas como capas de accesibilidad.
+ * Orquestador de las capas de superposición (Overlays) del Launcher.
+ * Gestiona la creación, actualización y eliminación de las vistas de Compose sobre el sistema.
  */
 class OverlayManager(
     private val service: AccessibilityService,
@@ -50,41 +47,51 @@ class OverlayManager(
     private val windowManager = service.getSystemService(Context.WINDOW_SERVICE) as WindowManager
     private val context: Context get() = service
 
-    // --- Vistas de Jetpack Compose (Overlays) ---
+    // --- Referencias a Vistas (ComposeView) ---
     private lateinit var vistaNav: ComposeView
     private lateinit var vistaDrawer: ComposeView
     private lateinit var vistaSystemOptions: ComposeView
     private lateinit var vistaSideNavLeft: ComposeView
     private lateinit var vistaSideNavRight: ComposeView
+    private lateinit var vistaTimer: ComposeView
 
-    // --- Parámetros de Ventana para Side Navs (Persistentes para drag) ---
+    // --- Parámetros de Ventana (LayoutParams) ---
     private lateinit var paramsSideLeft: WindowManager.LayoutParams
     private lateinit var paramsSideRight: WindowManager.LayoutParams
+    private lateinit var paramsTimer: WindowManager.LayoutParams
 
-    // --- Estados Reactivos de la Interfaz (MutableState para Compose) ---
+    // --- Estado Global de la Interfaz ---
     var iconColorNav by mutableStateOf(Color.White)
     var navBarBackground by mutableStateOf(Color.Black)
     var drawerVisible by mutableStateOf(false)
     var systemOptionsVisible by mutableStateOf(false)
     var navBarAtTop by mutableStateOf(false)
     var navBarExpanded by mutableStateOf(true)
+    var clockAtLeft by mutableStateOf(true)
+
+    // --- Estado de la Grabación de Pantalla ---
+    var isRecording by mutableStateOf(false)
+    var recordingSeconds by mutableIntStateOf(0)
+    var showStopConfirmation by mutableStateOf(false)
+    private var timerJob: Job? = null
     
-    // Alturas dinámicas de las barras laterales (para límites de movimiento)
+    // Alturas dinámicas para evitar colisiones
     private var sideNavHeightLeft by mutableIntStateOf(0)
     private var sideNavHeightRight by mutableIntStateOf(0)
 
     /**
-     * Inicializa todas las capas necesarias.
+     * Inicializa y despliega todas las capas base.
      */
     fun setupOverlays() {
         setupDrawerOverlay()
         setupSystemOptionsOverlay()
         setupBarraNavegacion()
         setupSideNavs()
+        setupTimerOverlay()
     }
 
     /**
-     * Procesa comandos de acción provenientes de la UI.
+     * Procesa y ejecuta acciones provenientes de la UI.
      */
     fun manejarComando(comando: String?) {
         when (comando) {
@@ -95,7 +102,6 @@ class OverlayManager(
             "HOME" -> {
                 if (drawerVisible) toggleDrawer()
                 service.performGlobalAction(GLOBAL_ACTION_HOME)
-                // Asegurar que volvemos al Home si es necesario
                 val intent = Intent(Intent.ACTION_MAIN).apply {
                     addCategory(Intent.CATEGORY_HOME)
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION)
@@ -114,25 +120,26 @@ class OverlayManager(
             "CLOCK" -> if (!appLauncher.abrirRelojSistema()) toast("No se encontró el reloj")
             "TOGGLE_NAVBAR_POSITION" -> toggleNavBarPosition()
             "TOGGLE_NAVBAR_VISIBILITY" -> toggleNavBarVisibility()
+            "TOGGLE_CLOCK_SIDE" -> {
+                clockAtLeft = !clockAtLeft
+                setupBarraNavegacion()
+            }
         }
     }
 
-    // --- Gestión de Visibilidad y Posicionamiento ---
+    // --- Métodos de Control de Capas ---
 
     fun toggleNavBarVisibility() {
         navBarExpanded = !navBarExpanded
         setupBarraNavegacion()
-        ajustarPosicionSideNav(true)
-        ajustarPosicionSideNav(false)
+        actualizarPosicionesSideNav()
     }
 
     fun toggleNavBarPosition() {
         navBarAtTop = !navBarAtTop
         setupBarraNavegacion()
-        ajustarPosicionSideNav(true)
-        ajustarPosicionSideNav(false)
-        // Notificar a otros componentes que la posición cambió
-        context.sendBroadcast(Intent("NAVBAR_POSITION_CHANGED").putExtra("atTop", navBarAtTop))
+        actualizarPosicionesSideNav()
+        context.sendBroadcast(Intent(Constants.ACTION_NAVBAR_POSITION_CHANGED).putExtra("atTop", navBarAtTop))
     }
 
     fun toggleDrawer() {
@@ -154,11 +161,10 @@ class OverlayManager(
         if (!systemOptionsVisible) {
             systemManager.actualizarValoresSistema()
             systemOptionsVisible = true
-            val params = createOverlayParams(
+            windowManager.addView(vistaSystemOptions, createOverlayParams(
                 WindowManager.LayoutParams.MATCH_PARENT, 
                 WindowManager.LayoutParams.MATCH_PARENT
-            )
-            windowManager.addView(vistaSystemOptions, params)
+            ))
         } else {
             if (::vistaSystemOptions.isInitialized && vistaSystemOptions.parent != null) {
                 windowManager.removeView(vistaSystemOptions)
@@ -167,46 +173,39 @@ class OverlayManager(
         }
     }
 
-    /**
-     * Actualiza el esquema de colores de la UI (Dark/Light mode).
-     */
     fun actualizarColores(esClaro: Boolean) {
         navBarBackground = if (esClaro) Color.Black else Color.White
         iconColorNav = if (esClaro) Color.White else Color.Black
     }
 
-    // --- Inicialización de Vistas Específicas ---
+    // --- Configuraciones de Vistas Individuales ---
 
     private fun setupBarraNavegacion() {
         val density = context.resources.displayMetrics.density
-        val h = if (!navBarExpanded) 1 else (48 * density).toInt()
+        val heightPx = if (!navBarExpanded) 1 else (48 * density).toInt()
 
-        val params = createOverlayParams(WindowManager.LayoutParams.MATCH_PARENT, h).apply {
+        val params = createOverlayParams(WindowManager.LayoutParams.MATCH_PARENT, heightPx).apply {
             gravity = if (navBarAtTop) Gravity.TOP else Gravity.BOTTOM
             flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                     WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
                     WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
             
-            // Si está colapsada, no debe interceptar toques (transparente al tacto)
-            if (!navBarExpanded) {
-                flags = flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
-            }
+            if (!navBarExpanded) flags = flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
         }
 
         if (!::vistaNav.isInitialized) {
             vistaNav = createComposeView {
-                Box(modifier = Modifier.fillMaxSize()) {
-                    NavBar(
-                        onActionClicked = { 
-                            manejarComando(it)
-                            context.sendBroadcast(Intent("ACCION_BARRA").putExtra("comando", it)) 
-                        },
-                        iconColor = iconColorNav,
-                        backgroundColor = navBarBackground,
-                        isAtTop = navBarAtTop,
-                        isExpanded = navBarExpanded
-                    )
-                }
+                NavBar(
+                    onActionClicked = { 
+                        manejarComando(it)
+                        context.sendBroadcast(Intent(Constants.ACTION_NAVBAR_COMMAND).putExtra("comando", it)) 
+                    },
+                    iconColor = iconColorNav,
+                    backgroundColor = navBarBackground,
+                    isAtTop = navBarAtTop,
+                    isExpanded = navBarExpanded,
+                    clockAtLeft = clockAtLeft
+                )
             }
             windowManager.addView(vistaNav, params)
         } else {
@@ -217,27 +216,8 @@ class OverlayManager(
     private fun setupSideNavs() {
         val initialY = (context.resources.displayMetrics.heightPixels / 3)
         
-        // Configuración lado izquierdo
-        paramsSideLeft = createOverlayParams(
-            WindowManager.LayoutParams.WRAP_CONTENT, 
-            WindowManager.LayoutParams.WRAP_CONTENT
-        ).apply {
-            gravity = Gravity.START or Gravity.TOP
-            y = initialY
-            flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or 
-                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
-        }
-
-        // Configuración lado derecho
-        paramsSideRight = createOverlayParams(
-            WindowManager.LayoutParams.WRAP_CONTENT, 
-            WindowManager.LayoutParams.WRAP_CONTENT
-        ).apply {
-            gravity = Gravity.END or Gravity.TOP
-            y = initialY
-            flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or 
-                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
-        }
+        paramsSideLeft = createSideNavParams(Gravity.START, initialY)
+        paramsSideRight = createSideNavParams(Gravity.END, initialY)
 
         vistaSideNavLeft = createSideNavComposeView(true, paramsSideLeft)
         vistaSideNavRight = createSideNavComposeView(false, paramsSideRight)
@@ -252,17 +232,8 @@ class OverlayManager(
                 isLeft = isLeft,
                 onAction = { manejarComando(it) },
                 onDrag = { deltaY ->
-                    // Gestión del movimiento vertical de las barras laterales
                     params.y += deltaY.toInt()
-                    val screenHeight = context.resources.displayMetrics.heightPixels
-                    val navBarHeight = if (!navBarExpanded) 0 else (48 * context.resources.displayMetrics.density).toInt()
-                    val currentViewHeight = if (isLeft) sideNavHeightLeft else sideNavHeightRight
-                    
-                    // Calcular límites para que no se solape con la barra de navegación o salga de pantalla
-                    val minY = if (navBarAtTop) navBarHeight else 0
-                    val maxY = if (navBarAtTop) screenHeight - currentViewHeight else screenHeight - navBarHeight - currentViewHeight
-                    
-                    params.y = params.y.coerceIn(minY, maxY.coerceAtLeast(minY))
+                    constrainSideNav(isLeft, params)
                     windowManager.updateViewLayout(if (isLeft) vistaSideNavLeft else vistaSideNavRight, params)
                 },
                 isNavBarVisible = navBarExpanded,
@@ -275,34 +246,44 @@ class OverlayManager(
         }
     }
 
-    /**
-     * Reajusta la posición de una barra lateral basándose en el estado actual de la barra de navegación.
-     */
+    private fun actualizarPosicionesSideNav() {
+        ajustarPosicionSideNav(true)
+        ajustarPosicionSideNav(false)
+    }
+
     private fun ajustarPosicionSideNav(isLeft: Boolean) {
-        if (!(::paramsSideLeft.isInitialized || ::paramsSideRight.isInitialized)) return
-        
+        if (!(::paramsSideLeft.isInitialized && ::paramsSideRight.isInitialized)) return
         val params = if (isLeft) paramsSideLeft else paramsSideRight
         val vista = if (isLeft) vistaSideNavLeft else vistaSideNavRight
-        val currentViewHeight = if (isLeft) sideNavHeightLeft else sideNavHeightRight
         
         if (vista.parent != null) {
-            val navBarHeight = if (!navBarExpanded) 0 else (48 * context.resources.displayMetrics.density).toInt()
-            val screenHeight = context.resources.displayMetrics.heightPixels
-            
-            val minY = if (navBarAtTop) navBarHeight else 0
-            val maxY = if (navBarAtTop) screenHeight - currentViewHeight else screenHeight - navBarHeight - currentViewHeight
-            
-            params.y = params.y.coerceIn(minY, maxY.coerceAtLeast(minY))
+            constrainSideNav(isLeft, params)
             windowManager.updateViewLayout(vista, params)
         }
+    }
+
+    private fun constrainSideNav(isLeft: Boolean, params: WindowManager.LayoutParams) {
+        val density = context.resources.displayMetrics.density
+        val screenHeight = context.resources.displayMetrics.heightPixels
+        val viewHeight = if (isLeft) sideNavHeightLeft else sideNavHeightRight
+        
+        val navHeight = if (!navBarExpanded) 0 else (48 * density).toInt()
+        val topSafe = (60 * density).toInt() 
+        
+        val minY = if (navBarAtTop) (navHeight + topSafe) else topSafe
+        val maxY = if (navBarAtTop) {
+            screenHeight - viewHeight - (16 * density).toInt()
+        } else {
+            screenHeight - viewHeight - navHeight - (8 * density).toInt()
+        }
+        
+        params.y = params.y.coerceIn(minY, maxY.coerceAtLeast(minY))
     }
 
     private fun setupDrawerOverlay() {
         vistaDrawer = createComposeView {
             Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .clickable(null, null) { toggleDrawer() }, // Cerrar al tocar fuera
+                modifier = Modifier.fillMaxSize().clickable(null, null) { toggleDrawer() },
                 contentAlignment = Alignment.Center
             ) {
                 AppDrawer(onClose = { toggleDrawer() })
@@ -313,19 +294,17 @@ class OverlayManager(
     private fun setupSystemOptionsOverlay() {
         vistaSystemOptions = createComposeView {
             Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .clickable(null, null) { toggleSystemOptions() }, // Cerrar al tocar fuera
+                modifier = Modifier.fillMaxSize().clickable(null, null) { toggleSystemOptions() },
                 contentAlignment = if (navBarAtTop) Alignment.TopCenter else Alignment.BottomCenter
             ) {
                 SystemOptionsPanel(
                     onSettingsClick = { 
                         systemManager.launchSettings(Settings.ACTION_SETTINGS)
-                        closeSystemOptionsWithDelay() 
+                        vistaSystemOptions.postDelayed({ toggleSystemOptions() }, 200)
                     },
                     onWifiClick = { 
                         systemManager.launchSettings(Settings.ACTION_WIFI_SETTINGS)
-                        closeSystemOptionsWithDelay() 
+                        vistaSystemOptions.postDelayed({ toggleSystemOptions() }, 200)
                     },
                     onBluetoothClick = { 
                         systemManager.abrirAjustesBT()
@@ -340,12 +319,16 @@ class OverlayManager(
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
                             service.performGlobalAction(GLOBAL_ACTION_TAKE_SCREENSHOT)
                         } else {
-                            toast("Función no soportada en esta versión de Android")
+                            toast("No soportado en esta versión")
                         }
                         toggleSystemOptions()
                     },
                     onRecordClick = { 
-                        if (!appLauncher.abrirGrabadorPantalla()) toast("Grabador no disponible")
+                        if (isRecording) {
+                            context.stopService(Intent(context, com.example.launcherorbys.services.ScreenRecordService::class.java))
+                        } else {
+                            appLauncher.iniciarGrabacionEstandar()
+                        }
                         toggleSystemOptions() 
                     },
                     isWifiOn = systemManager.isWifiOn,
@@ -358,70 +341,139 @@ class OverlayManager(
                     currentVolume = systemManager.currentVolume,
                     onVolumeChange = { systemManager.cambiarVolumen(it) },
                     modifier = Modifier
-                        .padding(
-                            top = if (navBarAtTop) 50.dp else 0.dp, 
-                            bottom = if (navBarAtTop) 0.dp else 60.dp
-                        )
-                        .clickable(null, null) { /* Evitar que el click se propague al cerrar */ }
+                        .padding(top = if (navBarAtTop) 50.dp else 0.dp, bottom = if (navBarAtTop) 0.dp else 60.dp)
+                        .clickable(null, null) { }
                 )
             }
         }
     }
 
-    private fun closeSystemOptionsWithDelay() {
-        vistaSystemOptions.postDelayed({ 
-            if (systemOptionsVisible) toggleSystemOptions() 
-        }, 200)
-    }
+    private fun setupTimerOverlay() {
+        paramsTimer = createOverlayParams(
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            WindowManager.LayoutParams.WRAP_CONTENT
+        ).apply {
+            gravity = Gravity.TOP or Gravity.START
+            x = (16 * context.resources.displayMetrics.density).toInt()
+            y = (8 * context.resources.displayMetrics.density).toInt()
+        }
 
-    // --- Utilidades ---
+        vistaTimer = createComposeView {
+            Box(modifier = Modifier.fillMaxSize()) {
+                if (isRecording) {
+                    Box(modifier = Modifier.padding(top = 8.dp, start = 16.dp)) {
+                        RecordingTimer(
+                            seconds = recordingSeconds,
+                            onStop = { 
+                                showStopConfirmation = true 
+                                actualizarVentanaTimer(true)
+                            }
+                        )
+                    }
+                }
 
-    /**
-     * Crea una instancia de [ComposeView] vinculada al ciclo de vida del servicio.
-     */
-    private fun createComposeView(content: @androidx.compose.runtime.Composable () -> Unit): ComposeView {
-        return ComposeView(context).apply {
-            setViewTreeLifecycleOwner(service as LifecycleOwner)
-            setViewTreeSavedStateRegistryOwner(service as SavedStateRegistryOwner)
-            setContent {
-                LauncherOrbysTheme {
-                    content()
+                if (showStopConfirmation) {
+                    StopRecordingDialog(
+                        onConfirm = { 
+                            showStopConfirmation = false
+                            stopRecording() 
+                        },
+                        onCancel = { 
+                            showStopConfirmation = false 
+                            actualizarVentanaTimer(false)
+                        }
+                    )
                 }
             }
         }
     }
 
-    /**
-     * Crea parámetros base para una ventana de tipo overlay de accesibilidad.
-     */
+    private fun actualizarVentanaTimer(full: Boolean) {
+        if (!::paramsTimer.isInitialized || vistaTimer.parent == null) return
+        if (full) {
+            paramsTimer.width = WindowManager.LayoutParams.MATCH_PARENT
+            paramsTimer.height = WindowManager.LayoutParams.MATCH_PARENT
+        } else {
+            paramsTimer.width = WindowManager.LayoutParams.WRAP_CONTENT
+            paramsTimer.height = WindowManager.LayoutParams.WRAP_CONTENT
+        }
+        windowManager.updateViewLayout(vistaTimer, paramsTimer)
+    }
+
+    fun startRecording() {
+        if (isRecording) return
+        isRecording = true
+        recordingSeconds = 0
+        showStopConfirmation = false
+        
+        actualizarVentanaTimer(false)
+        if (vistaTimer.parent == null) windowManager.addView(vistaTimer, paramsTimer)
+
+        timerJob?.cancel()
+        timerJob = (service as LifecycleOwner).lifecycleScope.launch {
+            while (isRecording) {
+                delay(1000)
+                recordingSeconds++
+            }
+        }
+    }
+
+    fun stopRecording() {
+        context.stopService(Intent(context, com.example.launcherorbys.services.ScreenRecordService::class.java))
+        finishRecordingUI()
+    }
+
+    fun finishRecordingUI() {
+        isRecording = false
+        showStopConfirmation = false
+        timerJob?.cancel()
+        if (::vistaTimer.isInitialized && vistaTimer.parent != null) {
+            windowManager.removeView(vistaTimer)
+        }
+    }
+
+    // --- Utilidades Estáticas ---
+
+    private fun createComposeView(content: @androidx.compose.runtime.Composable () -> Unit): ComposeView {
+        return ComposeView(context).apply {
+            setViewTreeLifecycleOwner(service as LifecycleOwner)
+            setViewTreeSavedStateRegistryOwner(service as SavedStateRegistryOwner)
+            setContent { LauncherOrbysTheme { content() } }
+        }
+    }
+
     private fun createOverlayParams(w: Int, h: Int) = WindowManager.LayoutParams(
         w, h, 
         WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
-        WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or 
-        WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
+        WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
         PixelFormat.TRANSLUCENT
     )
 
+    private fun createSideNavParams(grav: Int, initialY: Int) = createOverlayParams(
+        WindowManager.LayoutParams.WRAP_CONTENT, 
+        WindowManager.LayoutParams.WRAP_CONTENT
+    ).apply {
+        gravity = grav or Gravity.TOP
+        y = initialY
+        flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+    }
+
     private fun toast(m: String) = Toast.makeText(context, m, Toast.LENGTH_SHORT).show()
 
-    /**
-     * Elimina todas las vistas activas del WindowManager para evitar fugas y errores.
-     */
     fun onDestroy() {
-        if (::vistaNav.isInitialized && vistaNav.parent != null) {
-            try { windowManager.removeView(vistaNav) } catch (e: Exception) {}
-        }
-        if (::vistaDrawer.isInitialized && vistaDrawer.parent != null) {
-            try { windowManager.removeView(vistaDrawer) } catch (e: Exception) {}
-        }
-        if (::vistaSystemOptions.isInitialized && vistaSystemOptions.parent != null) {
-            try { windowManager.removeView(vistaSystemOptions) } catch (e: Exception) {}
-        }
-        if (::vistaSideNavLeft.isInitialized && vistaSideNavLeft.parent != null) {
-            try { windowManager.removeView(vistaSideNavLeft) } catch (e: Exception) {}
-        }
-        if (::vistaSideNavRight.isInitialized && vistaSideNavRight.parent != null) {
-            try { windowManager.removeView(vistaSideNavRight) } catch (e: Exception) {}
+        val vistas = listOf(
+            if (::vistaNav.isInitialized) vistaNav else null,
+            if (::vistaDrawer.isInitialized) vistaDrawer else null,
+            if (::vistaSystemOptions.isInitialized) vistaSystemOptions else null,
+            if (::vistaSideNavLeft.isInitialized) vistaSideNavLeft else null,
+            if (::vistaSideNavRight.isInitialized) vistaSideNavRight else null,
+            if (::vistaTimer.isInitialized) vistaTimer else null
+        )
+        
+        vistas.forEach { vista ->
+            if (vista != null && vista.parent != null) {
+                try { windowManager.removeView(vista) } catch (e: Exception) {}
+            }
         }
     }
 }

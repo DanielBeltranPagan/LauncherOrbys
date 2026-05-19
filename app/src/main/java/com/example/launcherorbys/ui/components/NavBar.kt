@@ -33,11 +33,14 @@ fun NavBar(
     iconColor: Color = Color.White,
     backgroundColor: Color = Color.Black,
     isAtTop: Boolean = false,
-    isExpanded: Boolean = true
+    isExpanded: Boolean = true,
+    clockAtLeft: Boolean = true
 ) {
     val height by animateDpAsState(targetValue = if (isExpanded) 48.dp else 0.dp, label = "navHeight")
     val contentAlpha by animateFloatAsState(targetValue = if (isExpanded) 1f else 0f, label = "contentAlpha")
     
+    var controlsExpanded by remember { mutableStateOf(false) }
+
     val timeFormatter = remember { 
         SimpleDateFormat("HH:mm", Locale.getDefault())
     }
@@ -59,7 +62,7 @@ fun NavBar(
             .height(height),
         contentAlignment = if (isAtTop) Alignment.TopCenter else Alignment.BottomCenter
     ) {
-        // Fondo principal (recto para que llegue a los bordes)
+        // Fondo principal
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -68,47 +71,70 @@ fun NavBar(
         )
 
         if (isExpanded) {
-            // Contenido de la barra
-            Row(
-                modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
-                verticalAlignment = Alignment.CenterVertically
+            // Capa para los Iconos Centrales (Perfectamente centrados en pantalla)
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
             ) {
-                // Reloj
-                Text(
-                    text = currentTime,
-                    color = iconColor,
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.clickable { onActionClicked("CLOCK") }
-                )
-
-                // Iconos centrales
                 Row(
-                    modifier = Modifier.weight(1f),
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
                 ) {
                     NavBarIcon(Icons.AutoMirrored.Filled.ArrowBack, iconColor) { onActionClicked("BACK") }
-                    Spacer(modifier = Modifier.width(12.dp))
+                    Spacer(modifier = Modifier.width(16.dp))
                     NavBarIcon(Icons.Default.Home, iconColor) { onActionClicked("HOME") }
-                    Spacer(modifier = Modifier.width(12.dp))
+                    Spacer(modifier = Modifier.width(16.dp))
                     NavBarIcon(Icons.Default.CropSquare, iconColor) { onActionClicked("RECENTS") }
-                    Spacer(modifier = Modifier.width(12.dp))
+                    Spacer(modifier = Modifier.width(16.dp))
                     NavBarIcon(Icons.Default.Apps, iconColor) { onActionClicked("APPS") }
-                    Spacer(modifier = Modifier.width(12.dp))
-                    NavBarIcon(Icons.Default.Search, iconColor) { onActionClicked("GOOGLE") }
-                    Spacer(modifier = Modifier.width(12.dp))
+                    Spacer(modifier = Modifier.width(16.dp))
+                    NavBarIcon(Icons.Default.Language, iconColor) { onActionClicked("GOOGLE") }
+                    Spacer(modifier = Modifier.width(16.dp))
                     NavBarIcon(Icons.Default.Folder, iconColor) { onActionClicked("FILES") }
-                    Spacer(modifier = Modifier.width(12.dp))
+                    Spacer(modifier = Modifier.width(16.dp))
                     NavBarIcon(Icons.Default.Tune, iconColor) { onActionClicked("SYSTEM_OPTIONS") }
                 }
+            }
 
-                // Controles derechos
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    NavBarIcon(
-                        icon = if (isAtTop) Icons.Default.KeyboardArrowDown else Icons.Default.KeyboardArrowUp,
-                        color = iconColor
-                    ) { onActionClicked("TOGGLE_NAVBAR_POSITION") }
+            // Capa para los componentes laterales (Reloj y Controles)
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 16.dp)
+            ) {
+                // Definimos los componentes
+                val clockComponent = @Composable {
+                    Text(
+                        text = currentTime,
+                        color = iconColor,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.clickable { onActionClicked("CLOCK") }
+                    )
+                }
+
+                val controlsComponent = @Composable {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (controlsExpanded) {
+                            NavBarIcon(Icons.Default.SwapVert, iconColor) { onActionClicked("TOGGLE_NAVBAR_POSITION") }
+                            Spacer(modifier = Modifier.width(8.dp))
+                            NavBarIcon(Icons.Default.SwapHoriz, iconColor) { onActionClicked("TOGGLE_CLOCK_SIDE") }
+                            Spacer(modifier = Modifier.width(8.dp))
+                        }
+                        NavBarIcon(
+                            icon = if (controlsExpanded) Icons.Default.Close else Icons.Default.OpenWith,
+                            color = iconColor.copy(alpha = if (controlsExpanded) 0.5f else 1f)
+                        ) { controlsExpanded = !controlsExpanded }
+                    }
+                }
+
+                // Posicionamiento absoluto a los lados
+                Box(modifier = Modifier.align(Alignment.CenterStart)) {
+                    if (clockAtLeft) clockComponent() else controlsComponent()
+                }
+
+                Box(modifier = Modifier.align(Alignment.CenterEnd)) {
+                    if (clockAtLeft) controlsComponent() else clockComponent()
                 }
             }
         }

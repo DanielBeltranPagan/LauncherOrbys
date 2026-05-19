@@ -117,7 +117,7 @@ fun SystemOptionsPanel(
                 // --- SECCIÓN DE ACCESOS RÁPIDOS (GRILLA 3xN) ---
                 Column(
                     modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                    verticalArrangement = Arrangement.spacedBy(24.dp)
                 ) {
                     // Fila 1: Conectividad y Audio
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -209,7 +209,7 @@ fun QuickActionButton(
                 Icon(icon, contentDescription = label, modifier = Modifier.size(26.dp))
             }
         }
-        Spacer(modifier = Modifier.height(6.dp))
+        Spacer(modifier = Modifier.height(10.dp))
         Text(
             label, 
             color = Color.White.copy(alpha = 0.8f), 

@@ -7,13 +7,13 @@ import android.provider.AlarmClock
 import android.widget.Toast
 
 /**
- * Gestiona la apertura de aplicaciones externas, utilidades del sistema y navegación web.
- * Centraliza los intents de lanzamiento para mantener el código de los gestores de UI limpio.
+ * Gestor centralizado para el lanzamiento de aplicaciones y utilidades externas.
+ * Evita la dispersión de Intents de apertura por toda la interfaz de usuario.
  */
 class AppLauncher(private val context: Context) {
 
     /**
-     * Abre una URL en el navegador predeterminado.
+     * Abre un sitio web en el navegador del sistema.
      */
     fun abrirUrl(url: String) {
         try {
@@ -22,100 +22,89 @@ class AppLauncher(private val context: Context) {
             }
             context.startActivity(intent)
         } catch (e: Exception) {
-            toast("No hay una aplicación para abrir este enlace")
+            toast("No hay navegador instalado")
         }
     }
 
     /**
-     * Intenta abrir el explorador de archivos del sistema.
+     * Abre el explorador de archivos del sistema buscando los paquetes más comunes.
      */
     fun abrirAppArchivos() {
-        // Intentar abrir el explorador nativo de Google o el genérico de Android
         val intent = context.packageManager.getLaunchIntentForPackage("com.google.android.documentsui")
             ?: context.packageManager.getLaunchIntentForPackage("com.android.documentsui")
-            ?: Intent(Intent.ACTION_VIEW).apply { 
-                type = "vnd.android.cursor.dir/file" 
+            ?: Intent(Intent.ACTION_VIEW).apply {
+                type = "vnd.android.cursor.dir/file"
                 addCategory(Intent.CATEGORY_DEFAULT)
             }
-            
+
         try {
             context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         } catch (e: Exception) {
-            // Último recurso: Selector de contenido genérico
             try {
-                val fallback = Intent(Intent.ACTION_GET_CONTENT).apply { 
-                    type = "*/*" 
+                val fallback = Intent(Intent.ACTION_GET_CONTENT).apply {
+                    type = "*/*"
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
                 context.startActivity(fallback)
-            } catch (e: Exception) {
-                toast("No se encontró un explorador de archivos")
+            } catch (e2: Exception) {
+                toast("No se encontró explorador de archivos")
             }
         }
     }
 
     /**
-     * Intenta abrir el grabador de pantalla nativo buscando en paquetes comunes de fabricantes.
-     * @return true si se logró lanzar alguna actividad.
+     * Envía una señal interna para que MainActivity inicie el flujo de grabación de pantalla.
+     */
+    fun iniciarGrabacionEstandar() {
+        val intent = Intent("com.example.launcherorbys.START_SCREEN_RECORD").apply {
+            setPackage(context.packageName)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        context.startActivity(intent)
+    }
+
+    /**
+     * Intenta abrir el grabador de pantalla nativo del sistema.
      */
     fun abrirGrabadorPantalla(): Boolean {
         val intents = listOf(
-            // Diálogo estándar de Android 11+
             Intent().setClassName("com.android.systemui", "com.android.systemui.screenrecord.ScreenRecordDialog"),
-            // Samsung
-            context.packageManager.getLaunchIntentForPackage("com.samsung.android.app.screenrecorder"),
-            // Xiaomi/MIUI
-            context.packageManager.getLaunchIntentForPackage("com.miui.screenrecorder"),
-            // Oppo/Realme
-            context.packageManager.getLaunchIntentForPackage("com.coloros.screenrecorder"),
-            // OneUI Samsung shortcut
-            Intent("com.samsung.android.app.screenrecorder.QuickPanelScreenRecorder")
+            Intent().setClassName("com.android.systemui", "com.android.systemui.screenrecord.ScreenRecordActivity"),
+            Intent("com.android.systemui.screenrecord.START")
         )
 
         for (intent in intents) {
-            if (intent != null) {
-                try {
-                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    context.startActivity(intent)
-                    return true
-                } catch (e: Exception) {
-                    // Continuar probando el siguiente si falla
-                }
-            }
+            try {
+                context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                return true
+            } catch (e: Exception) {}
         }
         return false
     }
 
     /**
-     * Intenta abrir la aplicación de reloj/alarmas buscando paquetes conocidos.
-     * @return true si se encontró y abrió alguna app.
+     * Intenta abrir la aplicación de alarma/reloj del sistema.
      */
     fun abrirRelojSistema(): Boolean {
-        val paquetesReloj = listOf(
-            "com.google.android.deskclock",       // Google / Pixel
-            "com.android.deskclock",              // AOSP
-            "com.sec.android.app.clockpackage",   // Samsung
-            "com.huawei.deskclock",               // Huawei
-            "com.coloros.alarmclock",             // Oppo
-            "com.miui.calculator"                 // Xiaomi (a veces integrado)
+        val paquetes = listOf(
+            "com.google.android.deskclock",
+            "com.android.deskclock",
+            "com.sec.android.app.clockpackage",
+            "com.huawei.deskclock"
         )
 
-        for (pkg in paquetesReloj) {
+        for (pkg in paquetes) {
             val intent = context.packageManager.getLaunchIntentForPackage(pkg)
             if (intent != null) {
                 try {
                     context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                     return true
-                } catch (e: Exception) { }
+                } catch (e: Exception) {}
             }
         }
 
-        // Fallback usando la acción estándar de alarmas
         return try {
-            val intentAlarma = Intent(AlarmClock.ACTION_SHOW_ALARMS).apply {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
-            context.startActivity(intentAlarma)
+            context.startActivity(Intent(AlarmClock.ACTION_SHOW_ALARMS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
             true
         } catch (e: Exception) {
             false
