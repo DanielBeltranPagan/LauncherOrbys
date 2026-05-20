@@ -7,6 +7,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.example.launcherorbys.ui.components.status.BluetoothSection
+import com.example.launcherorbys.ui.components.status.UsbSection
 import com.example.launcherorbys.ui.components.status.WifiSection
 
 /**
@@ -30,6 +31,7 @@ fun StatusBar(
         Spacer(modifier = Modifier.weight(1f))
 
         // Secciones modulares de estado
+        UsbSection(context = context)
         BluetoothSection(context = context)
         WifiSection(context = context)
     }

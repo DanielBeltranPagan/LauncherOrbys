@@ -74,6 +74,7 @@ class SystemControlManager(private val context: Context) {
     /**
      * Cambia el nivel de brillo de la pantalla (0.0 a 1.0).
      */
+
     fun cambiarBrillo(valor: Float) {
         if (Settings.System.canWrite(context)) {
             val intBrillo = (valor * 255).toInt().coerceIn(0, 255)
