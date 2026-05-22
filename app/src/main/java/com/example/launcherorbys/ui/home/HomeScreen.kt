@@ -39,7 +39,8 @@ import kotlin.math.roundToInt
 @Composable
 fun HomeScreen(
     viewModel: HomeViewModel,
-    onPersonalizarClick: () -> Unit
+    onPersonalizarClick: () -> Unit,
+    onBluetoothRequest: () -> Unit
 ) {
     val context = LocalContext.current
 
@@ -80,7 +81,8 @@ fun HomeScreen(
                 StatusBar(
                     modifier = Modifier
                         .align(Alignment.TopCenter)
-                        .padding(top = statusBarPadding)
+                        .padding(top = statusBarPadding),
+                    onBluetoothRequest = onBluetoothRequest
                 )
 
                 if (viewModel.mostrarMenuContextual) {

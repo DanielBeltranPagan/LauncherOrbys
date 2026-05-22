@@ -144,12 +144,24 @@ class OverlayManager(
 
     fun toggleDrawer() {
         if (!drawerVisible) {
+            openDrawer()
+        } else {
+            closeDrawer()
+        }
+    }
+
+    fun openDrawer() {
+        if (!drawerVisible) {
             drawerVisible = true
             windowManager.addView(vistaDrawer, createOverlayParams(
                 WindowManager.LayoutParams.MATCH_PARENT, 
                 WindowManager.LayoutParams.MATCH_PARENT
             ))
-        } else {
+        }
+    }
+
+    fun closeDrawer() {
+        if (drawerVisible) {
             if (::vistaDrawer.isInitialized && vistaDrawer.parent != null) {
                 windowManager.removeView(vistaDrawer)
             }
@@ -283,10 +295,10 @@ class OverlayManager(
     private fun setupDrawerOverlay() {
         vistaDrawer = createComposeView {
             Box(
-                modifier = Modifier.fillMaxSize().clickable(null, null) { toggleDrawer() },
+                modifier = Modifier.fillMaxSize().clickable(null, null) { closeDrawer() },
                 contentAlignment = Alignment.Center
             ) {
-                AppDrawer(onClose = { toggleDrawer() })
+                AppDrawer(onClose = { closeDrawer() })
             }
         }
     }
@@ -307,7 +319,12 @@ class OverlayManager(
                         vistaSystemOptions.postDelayed({ toggleSystemOptions() }, 200)
                     },
                     onBluetoothClick = { 
-                        systemManager.abrirAjustesBT()
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && 
+                            context.checkSelfPermission(android.Manifest.permission.BLUETOOTH_CONNECT) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                            context.sendBroadcast(Intent(Constants.ACTION_REQUEST_BLUETOOTH).setPackage(context.packageName))
+                        } else {
+                            systemManager.abrirAjustesBT()
+                        }
                         toggleSystemOptions() 
                     },
                     onMuteClick = { systemManager.toggleMute() },

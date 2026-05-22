@@ -24,7 +24,10 @@ import kotlinx.coroutines.delay
  * Verifica permisos y estado de conexión de forma periódica.
  */
 @Composable
-fun BluetoothSection(context: Context) {
+fun BluetoothSection(
+    context: Context,
+    onRequestPermission: () -> Unit
+) {
     val bluetoothAdapter = remember { 
         try {
             val manager = context.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
@@ -43,10 +46,17 @@ fun BluetoothSection(context: Context) {
                 ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED
             } else true
 
-            if (hasPermission) {
-                isBluetoothEnabled = bluetoothAdapter.isEnabled
-                isConnected = bluetoothAdapter.getProfileConnectionState(BluetoothProfile.GATT) == BluetoothProfile.STATE_CONNECTED ||
-                              bluetoothAdapter.getProfileConnectionState(BluetoothProfile.A2DP) == BluetoothProfile.STATE_CONNECTED
+            try {
+                if (hasPermission) {
+                    isBluetoothEnabled = bluetoothAdapter.isEnabled
+                    isConnected = bluetoothAdapter.getProfileConnectionState(BluetoothProfile.GATT) == BluetoothProfile.STATE_CONNECTED ||
+                                  bluetoothAdapter.getProfileConnectionState(BluetoothProfile.A2DP) == BluetoothProfile.STATE_CONNECTED
+                } else {
+                    isBluetoothEnabled = false
+                    isConnected = false
+                }
+            } catch (e: Exception) {
+                isBluetoothEnabled = false
             }
         }
     }
@@ -70,15 +80,24 @@ fun BluetoothSection(context: Context) {
         onDispose { try { context.unregisterReceiver(receiver) } catch (e: Exception) {} }
     }
 
-    if (hasPermission && isBluetoothEnabled) {
-        StatusIcon(
-            imageVector = if (isConnected) Icons.Default.BluetoothConnected else Icons.Default.Bluetooth,
-            contentDescription = "Bluetooth",
-            onClick = {
-                context.startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS).apply {
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                })
+    StatusIcon(
+        imageVector = if (hasPermission && isConnected) Icons.Default.BluetoothConnected else Icons.Default.Bluetooth,
+        contentDescription = "Bluetooth",
+        isVisible = bluetoothAdapter != null && (isBluetoothEnabled || !hasPermission),
+        onClick = {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !hasPermission) {
+                onRequestPermission()
+            } else {
+                try {
+                    context.startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS).apply {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    })
+                } catch (e: Exception) {
+                    context.startActivity(Intent(Settings.ACTION_SETTINGS).apply {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    })
+                }
             }
-        )
-    }
+        }
+    )
 }

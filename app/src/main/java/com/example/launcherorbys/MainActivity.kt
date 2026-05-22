@@ -18,6 +18,7 @@ import androidx.activity.viewModels
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.LocalOverscrollConfiguration
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Bluetooth
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.runtime.*
 import androidx.compose.ui.graphics.Color
@@ -58,6 +59,7 @@ class MainActivity : ComponentActivity() {
     
     // --- Lógica de Grabación (On-Demand) ---
     private var showAudioDialog by mutableStateOf(false)
+    private var showBluetoothDialog by mutableStateOf(false)
     private var pendingRecordingIntent by mutableStateOf<Intent?>(null)
 
     private val requestAudioLauncher = registerForActivityResult(
@@ -69,8 +71,11 @@ class MainActivity : ComponentActivity() {
     }
 
     private val requestBluetoothLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions()
-    ) { updatePermissionStates() }
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        hasBluetoothPermission = granted
+        showBluetoothDialog = false
+    }
 
     private val screenCaptureLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -100,6 +105,12 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private val receptorBluetooth = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            showBluetoothDialog = true
+        }
+    }
+
     @OptIn(ExperimentalFoundationApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -124,10 +135,14 @@ class MainActivity : ComponentActivity() {
             LauncherOrbysTheme(darkTheme = !viewModel.esTemaClaro) {
                 CompositionLocalProvider(LocalOverscrollConfiguration provides null) {
                     
-                    HomeScreen(viewModel = viewModel, onPersonalizarClick = { openWallpaperPicker() })
+                    HomeScreen(
+                        viewModel = viewModel, 
+                        onPersonalizarClick = { openWallpaperPicker() },
+                        onBluetoothRequest = { showBluetoothDialog = true }
+                    )
 
                     // Gestión de Permisos Críticos
-                    val allGranted = isDefault && isAccessibilityOn && canWriteSettings && hasBluetoothPermission
+                    val allGranted = isDefault && isAccessibilityOn && canWriteSettings
                     if (!allGranted) {
                         UIPermissionOverlay()
                     }
@@ -136,29 +151,44 @@ class MainActivity : ComponentActivity() {
                     if (showAudioDialog) {
                         UIAudioDialog()
                     }
+
+                    // Gestión de Bluetooth On-Demand
+                    if (showBluetoothDialog) {
+                        UIBluetoothDialog()
+                    }
                 }
             }
         }
     }
 
     @Composable
+    private fun UIBluetoothDialog() {
+        OnDemandPermissionDialog(
+            title = "Permiso de Bluetooth",
+            description = "Se requiere permiso para detectar y conectar dispositivos cercanos.",
+            icon = Icons.Default.Bluetooth,
+            onGrant = { 
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    requestBluetoothLauncher.launch(android.Manifest.permission.BLUETOOTH_CONNECT)
+                }
+            },
+            onDismiss = { showBluetoothDialog = false }
+        )
+    }
+
+    @Composable
     private fun UIPermissionOverlay() {
-        val permissionsList = remember(isDefault, canWriteSettings, hasBluetoothPermission, isAccessibilityOn) {
+        val permissionsList = remember(isDefault, canWriteSettings, isAccessibilityOn) {
             mutableListOf<PermissionItem>().apply {
-                add(PermissionItem("Inicio Orbys", "Pantalla principal", isDefault) {
+                add(PermissionItem("Habilitar Lanzador Predeterminado", "Establecer Orbys como la pantalla de inicio principal", isDefault) {
                     startActivity(Intent(Settings.ACTION_HOME_SETTINGS))
                     autoReturnCheck { permissionManager.isDefaultLauncher() }
                 })
-                add(PermissionItem("Brillo", "Control de pantalla", canWriteSettings) {
+                add(PermissionItem("Habilitar Modificación de Ajustes del Sistema", "Permitir el ajuste de brillo y volumen del sistema", canWriteSettings) {
                     startActivity(Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS, Uri.parse("package:$packageName")))
                     autoReturnCheck { permissionManager.canWriteSettings() }
                 })
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                    add(PermissionItem("Bluetooth", "Dispositivos cercanos", hasBluetoothPermission) {
-                        requestBluetoothLauncher.launch(arrayOf(android.Manifest.permission.BLUETOOTH_CONNECT))
-                    })
-                }
-                add(PermissionItem("Accesibilidad", "Gestos y barras", isAccessibilityOn) {
+                add(PermissionItem("Habilitar Servicio de Accesibilidad", "Activar gestos de navegación y acciones rápidas", isAccessibilityOn) {
                     startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
                     autoReturnCheck { permissionManager.isAccessibilityEnabled() }
                 })
@@ -185,16 +215,21 @@ class MainActivity : ComponentActivity() {
 
     private fun autoReturnCheck(check: () -> Boolean) {
         lifecycleScope.launch {
-            delay(800)
-            while (isActive) {
+            delay(500) // Reducido para más rapidez
+            var attempts = 0
+            while (isActive && attempts < 30) { // Límite de 30 segundos
                 if (check()) {
                     updatePermissionStates()
-                    startActivity(Intent(this@MainActivity, MainActivity::class.java).apply {
+                    // Aseguramos que el estado se propague antes de volver
+                    delay(200)
+                    val intent = Intent(this@MainActivity, MainActivity::class.java).apply {
                         addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
-                    })
+                    }
+                    startActivity(intent)
                     break
                 }
                 delay(1000)
+                attempts++
             }
         }
     }
@@ -216,6 +251,7 @@ class MainActivity : ComponentActivity() {
 
     private fun registerReceivers() {
         ContextCompat.registerReceiver(this, receptorBarra, IntentFilter(Constants.ACTION_NAVBAR_COMMAND), ContextCompat.RECEIVER_EXPORTED)
+        ContextCompat.registerReceiver(this, receptorBluetooth, IntentFilter(Constants.ACTION_REQUEST_BLUETOOTH), ContextCompat.RECEIVER_EXPORTED)
         registerReceiver(receptorWallpaper, IntentFilter(Intent.ACTION_WALLPAPER_CHANGED))
     }
 
@@ -313,6 +349,7 @@ class MainActivity : ComponentActivity() {
     override fun onDestroy() { 
         super.onDestroy()
         try { unregisterReceiver(receptorBarra) } catch (e: Exception) {}
+        try { unregisterReceiver(receptorBluetooth) } catch (e: Exception) {}
         try { unregisterReceiver(receptorWallpaper) } catch (e: Exception) {}
     }
 }

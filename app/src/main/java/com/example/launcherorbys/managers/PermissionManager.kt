@@ -25,17 +25,15 @@ class PermissionManager(private val context: Context) {
     }
 
     /**
-     * Comprueba si el servicio de accesibilidad está activado.
+     * Comprueba si el servicio de accesibilidad está activado de forma robusta.
      */
     fun isAccessibilityEnabled(): Boolean {
-        val expected = ComponentName(context, LauncherAccessibilityService::class.java)
-        val enabledServices = Settings.Secure.getString(
-            context.contentResolver, 
-            Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
-        ) ?: return false
+        val am = context.getSystemService(Context.ACCESSIBILITY_SERVICE) as android.view.accessibility.AccessibilityManager
+        val enabledServices = am.getEnabledAccessibilityServiceList(android.accessibilityservice.AccessibilityServiceInfo.FEEDBACK_ALL_MASK)
         
-        return enabledServices.split(':').any { 
-            ComponentName.unflattenFromString(it) == expected 
+        return enabledServices.any { 
+            it.resolveInfo.serviceInfo.packageName == context.packageName &&
+            it.resolveInfo.serviceInfo.name == LauncherAccessibilityService::class.java.name
         }
     }
 

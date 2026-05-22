@@ -16,7 +16,8 @@ import com.example.launcherorbys.ui.components.status.WifiSection
  */
 @Composable
 fun StatusBar(
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onBluetoothRequest: () -> Unit
 ) {
     val context = LocalContext.current
 
@@ -32,7 +33,7 @@ fun StatusBar(
 
         // Secciones modulares de estado
         UsbSection(context = context)
-        BluetoothSection(context = context)
+        BluetoothSection(context = context, onRequestPermission = onBluetoothRequest)
         WifiSection(context = context)
     }
 }

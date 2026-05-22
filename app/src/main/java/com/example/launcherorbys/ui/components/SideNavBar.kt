@@ -34,40 +34,45 @@ fun SideNavBar(
     onHeightChanged: (Int) -> Unit = {}
 ) {
     var isExpanded by remember { mutableStateOf(true) }
-    // Animación suave del ancho al contraer/expandir
-    val width by animateDpAsState(targetValue = if (isExpanded) 44.dp else 24.dp, label = "width")
+    // Animación suave de dimensiones y posición
+    val width by animateDpAsState(targetValue = if (isExpanded) 36.dp else 12.dp, label = "width")
+    val sidePadding by animateDpAsState(targetValue = if (isExpanded) 4.dp else 0.dp, label = "padding")
     
     Box(
         modifier = modifier
+            .padding(
+                start = if (isLeft) sidePadding else 0.dp,
+                end = if (!isLeft) sidePadding else 0.dp
+            )
             .width(width)
-            .heightIn(min = if (isExpanded) 200.dp else 60.dp)
+            .heightIn(min = if (isExpanded) 160.dp else 40.dp)
             .onSizeChanged { onHeightChanged(it.height) }
             .pointerInput(Unit) {
-                // Permite arrastrar la barra verticalmente por la pantalla
                 detectDragGestures { change, dragAmount ->
                     change.consume()
                     onDrag(dragAmount.y)
                 }
             }
             .background(
-                color = Color.Black.copy(alpha = 0.85f),
-                shape = if (isLeft) {
-                    RoundedCornerShape(topEnd = 20.dp, bottomEnd = 20.dp)
+                color = Color.Black.copy(alpha = 0.7f),
+                shape = if (isExpanded) {
+                    RoundedCornerShape(20.dp)
                 } else {
-                    RoundedCornerShape(topStart = 20.dp, bottomStart = 20.dp)
+                    if (isLeft) RoundedCornerShape(topEnd = 10.dp, bottomEnd = 10.dp)
+                    else RoundedCornerShape(topStart = 10.dp, bottomStart = 10.dp)
                 }
             )
-            .padding(vertical = 12.dp),
+            .padding(vertical = 6.dp),
         contentAlignment = Alignment.Center
     ) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             // Botón de Contraer/Expandir Sidebar
             IconButton(
                 onClick = { isExpanded = !isExpanded },
-                modifier = Modifier.size(36.dp)
+                modifier = Modifier.size(26.dp)
             ) {
                 Icon(
                     imageVector = if (isExpanded) {
@@ -77,28 +82,28 @@ fun SideNavBar(
                     },
                     contentDescription = "Toggle Sidebar",
                     tint = Color.White.copy(alpha = 0.5f),
-                    modifier = Modifier.size(24.dp)
+                    modifier = Modifier.size(18.dp)
                 )
             }
 
             if (isExpanded) {
                 // Botón Back
-                IconButton(onClick = { onAction("BACK") }, modifier = Modifier.size(36.dp)) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, "Atrás", tint = Color.White)
+                IconButton(onClick = { onAction("BACK") }, modifier = Modifier.size(28.dp)) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, "Atrás", tint = Color.White, modifier = Modifier.size(20.dp))
                 }
 
                 // Botón Home
-                IconButton(onClick = { onAction("HOME") }, modifier = Modifier.size(36.dp)) {
-                    Icon(Icons.Default.Home, "Inicio", tint = Color.White)
+                IconButton(onClick = { onAction("HOME") }, modifier = Modifier.size(28.dp)) {
+                    Icon(Icons.Default.Home, "Inicio", tint = Color.White, modifier = Modifier.size(20.dp))
                 }
 
                 // Botón Recents
-                IconButton(onClick = { onAction("RECENTS") }, modifier = Modifier.size(36.dp)) {
-                    Icon(Icons.Default.CropSquare, "Recientes", tint = Color.White)
+                IconButton(onClick = { onAction("RECENTS") }, modifier = Modifier.size(28.dp)) {
+                    Icon(Icons.Default.CropSquare, "Recientes", tint = Color.White, modifier = Modifier.size(20.dp))
                 }
 
-                // Botón NavBar Toggle (Flechas según posición y visibilidad)
-                IconButton(onClick = { onAction("TOGGLE_NAVBAR_VISIBILITY") }, modifier = Modifier.size(36.dp)) {
+                // Botón NavBar Toggle
+                IconButton(onClick = { onAction("TOGGLE_NAVBAR_VISIBILITY") }, modifier = Modifier.size(28.dp)) {
                     val arrowIcon = if (isNavBarAtTop) {
                         if (isNavBarVisible) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown
                     } else {
@@ -109,7 +114,7 @@ fun SideNavBar(
                         imageVector = arrowIcon,
                         contentDescription = "Toggle NavBar",
                         tint = Color.White,
-                        modifier = Modifier.size(32.dp)
+                        modifier = Modifier.size(24.dp)
                     )
                 }
             }

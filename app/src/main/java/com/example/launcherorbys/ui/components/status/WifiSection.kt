@@ -20,7 +20,13 @@ fun WifiSection(context: Context) {
     val connectivityManager = remember { 
         context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager 
     }
-    var isWifiEnabled by remember { mutableStateOf(false) }
+    
+    val checkWifi = {
+        val caps = connectivityManager.getNetworkCapabilities(connectivityManager.activeNetwork)
+        caps?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
+    }
+
+    var isWifiEnabled by remember { mutableStateOf(checkWifi()) }
 
     // Registra un callback para detectar cambios en la conectividad
     DisposableEffect(context) {
@@ -30,7 +36,7 @@ fun WifiSection(context: Context) {
             }
 
             override fun onLost(network: Network) {
-                isWifiEnabled = false
+                isWifiEnabled = checkWifi()
             }
 
             override fun onCapabilitiesChanged(network: Network, networkCapabilities: NetworkCapabilities) {
