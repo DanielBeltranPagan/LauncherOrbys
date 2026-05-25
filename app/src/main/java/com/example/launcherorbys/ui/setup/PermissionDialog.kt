@@ -93,7 +93,7 @@ fun PermissionDialog(
                     Spacer(modifier = Modifier.height(24.dp))
                     
                     Text(
-                        text = "Toca las opciones incompletas",
+                        text = "Toca las opciones para configurar",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)
                     )
@@ -106,7 +106,7 @@ fun PermissionDialog(
 @Composable
 private fun PermissionDialogItem(item: PermissionItem) {
     Surface(
-        onClick = { if (!item.isGranted) item.onGrantClick() },
+        onClick = { item.onGrantClick() },
         shape = RoundedCornerShape(20.dp),
         color = if (item.isGranted) 
             MaterialTheme.colorScheme.primary.copy(alpha = 0.08f) 

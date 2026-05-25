@@ -206,23 +206,35 @@ private fun AppItem(
                 },
                 leadingIcon = { Icon(Icons.Default.Info, contentDescription = null) }
             )
-            DropdownMenuItem(
-                text = { Text("Desinstalar", color = MaterialTheme.colorScheme.error) },
-                onClick = {
-                    showMenu = false
-                    try {
-                        val intent = Intent(Intent.ACTION_DELETE).apply {
-                            data = Uri.parse("package:${app.packageName}")
-                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            if (app.isUninstallable) {
+                DropdownMenuItem(
+                    text = { Text("Desinstalar", color = MaterialTheme.colorScheme.error) },
+                    onClick = {
+                        showMenu = false
+                        try {
+                            val intent = Intent(Intent.ACTION_DELETE).apply {
+                                data = Uri.parse("package:${app.packageName}")
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            }
+                            context.startActivity(intent)
+                            onAppLaunched() // Solo cerramos si el intent se lanza con éxito
+                        } catch (e: Exception) {
+                            android.widget.Toast.makeText(
+                                context,
+                                "No se pudo desinstalar",
+                                android.widget.Toast.LENGTH_SHORT
+                            ).show()
                         }
-                        context.startActivity(intent)
-                        onAppLaunched() // Solo cerramos si el intent se lanza con éxito
-                    } catch (e: Exception) {
-                        android.widget.Toast.makeText(context, "No se pudo desinstalar", android.widget.Toast.LENGTH_SHORT).show()
+                    },
+                    leadingIcon = {
+                        Icon(
+                            Icons.Default.Delete,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.error
+                        )
                     }
-                },
-                leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) }
-            )
+                )
+            }
         }
     }
 }

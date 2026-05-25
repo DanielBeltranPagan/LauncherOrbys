@@ -2,6 +2,7 @@ package com.example.launcherorbys.data.source.local
 
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ApplicationInfo
 import com.example.launcherorbys.data.model.AppInfo
 
 /**
@@ -30,13 +31,19 @@ class AppLoader(private val context: Context) {
 
         // Transformamos la lista de objetos 'ResolveInfo' a nuestra clase personalizada 'AppInfo'
         return activities.map {
+            val appInfo = it.activityInfo.applicationInfo
+            val isSystemApp = (appInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0
+            val isUpdatedSystemApp = (appInfo.flags and ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) != 0
+
             AppInfo(
                 // Extraemos el nombre de la app (ej: "WhatsApp")
                 label = it.loadLabel(pm).toString(),
                 // Extraemos el ID único del paquete (ej: "com.whatsapp")
                 packageName = it.activityInfo.packageName,
                 // Extraemos el icono visual de la aplicación
-                icon = it.loadIcon(pm)
+                icon = it.loadIcon(pm),
+                // Es desinstalable si no es una app de sistema, o si es una actualización de una de sistema
+                isUninstallable = !isSystemApp || isUpdatedSystemApp
             )
         }.sortedBy { it.label.lowercase() } // Ordenamos la lista alfabéticamente (A-Z)
     }
