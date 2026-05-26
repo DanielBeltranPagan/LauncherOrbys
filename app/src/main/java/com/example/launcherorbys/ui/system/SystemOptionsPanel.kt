@@ -1,6 +1,7 @@
-package com.example.launcherorbys.ui.components
+package com.example.launcherorbys.ui.system
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -24,6 +25,7 @@ fun SystemOptionsPanel(
     onSettingsClick: () -> Unit,
     onWifiClick: () -> Unit,
     onBluetoothClick: () -> Unit,
+    onWallpaperClick: () -> Unit,
     onMuteClick: () -> Unit,
     onPowerClick: () -> Unit,
     onScreenshotClick: () -> Unit,
@@ -79,21 +81,34 @@ fun SystemOptionsPanel(
                 ) {
                     // Control de Brillo
                     SliderRow(
-                        icon = Icons.Default.BrightnessMedium,
+                        icon = if (isAutoBrightness) Icons.Default.BrightnessAuto else Icons.Default.BrightnessMedium,
                         value = currentBrightness,
                         onValueChange = onBrightnessChange,
                         enabled = !isAutoBrightness,
                         trailingContent = {
-                            IconButton(
-                                onClick = { onAutoBrightnessChange(!isAutoBrightness) },
-                                modifier = Modifier.size(36.dp)
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clickable { onAutoBrightnessChange(!isAutoBrightness) }
                             ) {
-                                Text(
-                                    text = "A",
-                                    color = if (isAutoBrightness) themeColor else Color.White,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 16.sp
+                                Icon(
+                                    imageVector = Icons.Default.BrightnessAuto,
+                                    contentDescription = "Auto Brillo",
+                                    tint = if (isAutoBrightness) themeColor else Color.White,
+                                    modifier = Modifier.size(24.dp)
                                 )
+                                if (!isAutoBrightness) {
+                                    // Dibujamos una línea diagonal roja para indicar "Desactivado"
+                                    androidx.compose.foundation.Canvas(modifier = Modifier.size(20.dp)) {
+                                        drawLine(
+                                            color = Color.Red,
+                                            start = androidx.compose.ui.geometry.Offset(0f, 0f),
+                                            end = androidx.compose.ui.geometry.Offset(size.width, size.height),
+                                            strokeWidth = 3f
+                                        )
+                                    }
+                                }
                             }
                         }
                     )
@@ -103,8 +118,20 @@ fun SystemOptionsPanel(
                         icon = if (isMuted || currentVolume == 0f) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp,
                         value = if (isMuted) 0f else currentVolume,
                         onValueChange = onVolumeChange,
-                        iconClick = onMuteClick,
-                        iconTint = if (isMuted) themeColor else Color.White
+                        iconTint = if (isMuted) themeColor else Color.White,
+                        trailingContent = {
+                            IconButton(
+                                onClick = { onMuteClick() },
+                                modifier = Modifier.size(36.dp)
+                            ) {
+                                Icon(
+                                    imageVector = if (isMuted) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp,
+                                    contentDescription = "Mute",
+                                    tint = if (isMuted) themeColor else Color.White,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            }
+                        }
                     )
                 }
 
@@ -113,11 +140,11 @@ fun SystemOptionsPanel(
                     modifier = Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(24.dp)
                 ) {
-                    // Fila 1: Conectividad y Audio
+                    // Fila 1: Conectividad y Fondo
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                         QuickActionButton(Icons.Default.Wifi, "Wi-Fi", onWifiClick, isWifiOn)
                         QuickActionButton(Icons.Default.Bluetooth, "Bluetooth", onBluetoothClick, isBluetoothOn)
-                        QuickActionButton(Icons.AutoMirrored.Filled.VolumeOff, "Silencio", onMuteClick, isMuted)
+                        QuickActionButton(Icons.Default.Wallpaper, "Fondo", onWallpaperClick)
                     }
                     // Fila 2: Ajustes y Capturas
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {

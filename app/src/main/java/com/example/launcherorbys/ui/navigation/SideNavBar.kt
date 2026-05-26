@@ -1,4 +1,4 @@
-package com.example.launcherorbys.ui.components
+package com.example.launcherorbys.ui.navigation
 
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.background

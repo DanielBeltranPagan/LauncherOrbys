@@ -1,4 +1,4 @@
-package com.example.launcherorbys.ui.components.status
+package com.example.launcherorbys.ui.status
 
 import android.content.Context
 import android.content.Intent
@@ -9,7 +9,6 @@ import android.provider.Settings
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.runtime.*
-import com.example.launcherorbys.ui.components.StatusIcon
 
 /**
  * Gestiona el estado y la visualización del icono de WiFi en la barra de estado.

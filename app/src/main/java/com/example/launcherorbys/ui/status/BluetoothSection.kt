@@ -1,4 +1,4 @@
-package com.example.launcherorbys.ui.components.status
+package com.example.launcherorbys.ui.status
 
 import android.Manifest
 import android.bluetooth.BluetoothAdapter
@@ -16,7 +16,6 @@ import androidx.compose.material.icons.filled.Bluetooth
 import androidx.compose.material.icons.filled.BluetoothConnected
 import androidx.compose.runtime.*
 import androidx.core.content.ContextCompat
-import com.example.launcherorbys.ui.components.StatusIcon
 import kotlinx.coroutines.delay
 
 /**

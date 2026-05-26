@@ -1,4 +1,4 @@
-package com.example.launcherorbys.ui.components
+package com.example.launcherorbys.ui.navigation
 
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -40,6 +40,16 @@ fun NavBar(
     val contentAlpha by animateFloatAsState(targetValue = if (isExpanded) 1f else 0f, label = "contentAlpha")
     
     var controlsExpanded by remember { mutableStateOf(false) }
+
+    // Auto-cierre del menú de controles tras 5 segundos o si la navbar se oculta
+    LaunchedEffect(controlsExpanded, isExpanded) {
+        if (!isExpanded) {
+            controlsExpanded = false
+        } else if (controlsExpanded) {
+            delay(5000)
+            controlsExpanded = false
+        }
+    }
 
     val timeFormatter = remember { 
         SimpleDateFormat("HH:mm", Locale.getDefault())

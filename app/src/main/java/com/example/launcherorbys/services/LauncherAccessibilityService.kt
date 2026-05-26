@@ -10,11 +10,9 @@ import android.content.IntentFilter
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityWindowInfo
 import androidx.core.content.ContextCompat
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleOwner
-import androidx.lifecycle.LifecycleRegistry
-import androidx.lifecycle.ViewModelStore
-import androidx.lifecycle.ViewModelStoreOwner
+import androidx.lifecycle.*
+import androidx.lifecycle.viewmodel.CreationExtras
+import androidx.lifecycle.viewmodel.MutableCreationExtras
 import androidx.savedstate.SavedStateRegistry
 import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
@@ -27,7 +25,7 @@ import com.example.launcherorbys.utils.Constants
  * Servicio de Accesibilidad que actúa como el núcleo del Launcher Orbys.
  * Proporciona el contexto necesario para los Overlays y escucha eventos globales del sistema.
  */
-class LauncherAccessibilityService : AccessibilityService(), LifecycleOwner, SavedStateRegistryOwner, ViewModelStoreOwner {
+class LauncherAccessibilityService : AccessibilityService(), LifecycleOwner, SavedStateRegistryOwner, ViewModelStoreOwner, HasDefaultViewModelProviderFactory {
 
     // --- Gestores de Lógica ---
     private lateinit var systemManager: SystemControlManager
@@ -43,6 +41,16 @@ class LauncherAccessibilityService : AccessibilityService(), LifecycleOwner, Sav
 
     private val mViewModelStore = ViewModelStore()
     override val viewModelStore: ViewModelStore = mViewModelStore
+
+    override val defaultViewModelProviderFactory: ViewModelProvider.Factory
+        get() = ViewModelProvider.AndroidViewModelFactory.getInstance(application)
+
+    override val defaultViewModelCreationExtras: CreationExtras
+        get() = MutableCreationExtras().apply {
+            set(ViewModelProvider.AndroidViewModelFactory.APPLICATION_KEY, application)
+        }
+
+    private var lastPackageName: String? = null
 
     /**
      * Receptor central para coordinar acciones entre componentes del Launcher y el sistema.
@@ -66,6 +74,12 @@ class LauncherAccessibilityService : AccessibilityService(), LifecycleOwner, Sav
                 }
                 Constants.ACTION_RECORDING_STOPPED -> {
                     overlayManager.finishRecordingUI()
+                }
+                Constants.ACTION_NAVBAR_COMMAND -> {
+                    val comando = intent.getStringExtra("comando")
+                    if (comando == "CLOSE_ALL") {
+                        overlayManager.closeAllOverlays()
+                    }
                 }
             }
         }
@@ -91,6 +105,7 @@ class LauncherAccessibilityService : AccessibilityService(), LifecycleOwner, Sav
     override fun onServiceConnected() {
         super.onServiceConnected()
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_START)
+        lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_RESUME)
 
         // Configuración del servicio (eventos que queremos interceptar)
         this.serviceInfo = AccessibilityServiceInfo().apply {
@@ -119,6 +134,7 @@ class LauncherAccessibilityService : AccessibilityService(), LifecycleOwner, Sav
             addAction(android.net.ConnectivityManager.CONNECTIVITY_ACTION)
             addAction(Constants.ACTION_RECORDING_STARTED)
             addAction(Constants.ACTION_RECORDING_STOPPED)
+            addAction(Constants.ACTION_NAVBAR_COMMAND)
         }
         ContextCompat.registerReceiver(this, receptorComandos, filter, ContextCompat.RECEIVER_EXPORTED)
     }
@@ -157,19 +173,22 @@ class LauncherAccessibilityService : AccessibilityService(), LifecycleOwner, Sav
         val currentWindows = windows 
         val myPackage = this.packageName
         
-        val hayVentanaDelSistema = currentWindows.any { it.type == AccessibilityWindowInfo.TYPE_SYSTEM }
         val ventanaAppAlFrente = currentWindows.find { it.type == AccessibilityWindowInfo.TYPE_APPLICATION && it.isFocused }
         
-        var usuarioAbrioOtraApp = false
         ventanaAppAlFrente?.root?.let { rootNode ->
             val packageNameAlFrente = rootNode.packageName?.toString()
-            usuarioAbrioOtraApp = packageNameAlFrente != null && packageNameAlFrente != myPackage
+            
+            if (packageNameAlFrente != null && packageNameAlFrente != myPackage) {
+                // Solo colapsamos si el paquete ha cambiado (nueva app abierta)
+                if (packageNameAlFrente != lastPackageName && overlayManager.navBarExpanded) {
+                    overlayManager.toggleNavBarVisibility()
+                }
+                lastPackageName = packageNameAlFrente
+            } else if (packageNameAlFrente == myPackage) {
+                lastPackageName = myPackage
+            }
+            
             @Suppress("DEPRECATION") rootNode.recycle()
-        }
-
-        // Si el usuario cambia de app o abre el panel de notificaciones, colapsamos la barra
-        if ((hayVentanaDelSistema || usuarioAbrioOtraApp) && overlayManager.navBarExpanded) {
-            overlayManager.toggleNavBarVisibility()
         }
     }
 

@@ -67,7 +67,9 @@ class SystemControlManager(private val context: Context) {
             val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
             val caps = cm.getNetworkCapabilities(cm.activeNetwork)
             isWifiOn = caps?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
-            isBluetoothOn = android.bluetooth.BluetoothAdapter.getDefaultAdapter()?.isEnabled == true
+            
+            val bm = context.getSystemService(Context.BLUETOOTH_SERVICE) as android.bluetooth.BluetoothManager
+            isBluetoothOn = bm.adapter?.isEnabled == true
         } catch (e: Exception) {}
     }
 

@@ -10,8 +10,8 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
-import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.addCallback
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
@@ -26,41 +26,32 @@ import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
-import androidx.lifecycle.lifecycleScope
 import com.example.launcherorbys.data.repository.SettingsRepository
 import com.example.launcherorbys.managers.PermissionManager
 import com.example.launcherorbys.ui.home.HomeScreen
-import com.example.launcherorbys.ui.home.HomeViewModel
+import com.example.launcherorbys.ui.home.MainViewModel
 import com.example.launcherorbys.ui.setup.OnDemandPermissionDialog
 import com.example.launcherorbys.ui.setup.PermissionDialog
 import com.example.launcherorbys.ui.setup.PermissionItem
 import com.example.launcherorbys.ui.theme.LauncherOrbysTheme
 import com.example.launcherorbys.utils.Constants
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
-import kotlinx.coroutines.launch
 
 /**
  * Actividad principal del Launcher Orbys.
- * Responsable del ciclo de vida de la UI principal y la gestión de permisos críticos bajo demanda.
+ * Actúa como host de la UI base y punto de entrada para configuraciones críticas.
  */
 class MainActivity : ComponentActivity() {
 
-    // --- Repositorios y Gestores ---
     private lateinit var settingsRepository: SettingsRepository
     private lateinit var permissionManager: PermissionManager
-    private val viewModel: HomeViewModel by viewModels()
+    private val viewModel: MainViewModel by viewModels()
     
-    // --- Estados Reactivos de Permisos ---
-    private var isDefault by mutableStateOf(false)
-    private var isAccessibilityOn by mutableStateOf(false)
-    private var canWriteSettings by mutableStateOf(false)
-    private var hasBluetoothPermission by mutableStateOf(false)
-    
-    // --- Lógica de Grabación (On-Demand) ---
+    // --- Estados Locales de UI On-Demand ---
     private var showAudioDialog by mutableStateOf(false)
     private var showBluetoothDialog by mutableStateOf(false)
     private var pendingRecordingIntent by mutableStateOf<Intent?>(null)
+
+    // --- Registradores de Resultados de Actividad ---
 
     private val requestAudioLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -73,7 +64,7 @@ class MainActivity : ComponentActivity() {
     private val requestBluetoothLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
-        hasBluetoothPermission = granted
+        viewModel.updatePermissionStates()
         showBluetoothDialog = false
     }
 
@@ -91,23 +82,17 @@ class MainActivity : ComponentActivity() {
     }
 
     // --- Receptores de Eventos ---
-    private val receptorBarra = object : BroadcastReceiver() {
-        override fun onReceive(context: Context?, intent: Intent?) {
-            if (intent?.getStringExtra("comando") != null) viewModel.cerrarTodo()
-        }
-    }
 
-    private val receptorWallpaper = object : BroadcastReceiver() {
+    private val internalReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
-            viewModel.setBackground(null, null)
-            settingsRepository.saveFondo("")
-            settingsRepository.saveEsClaro(true)
-        }
-    }
-
-    private val receptorBluetooth = object : BroadcastReceiver() {
-        override fun onReceive(context: Context?, intent: Intent?) {
-            showBluetoothDialog = true
+            when (intent?.action) {
+                Constants.ACTION_REQUEST_BLUETOOTH -> showBluetoothDialog = true
+                Intent.ACTION_WALLPAPER_CHANGED -> {
+                    viewModel.setBackground(null, null)
+                    settingsRepository.saveFondo("")
+                    settingsRepository.saveEsClaro(true)
+                }
+            }
         }
     }
 
@@ -118,18 +103,14 @@ class MainActivity : ComponentActivity() {
         settingsRepository = SettingsRepository(this)
         permissionManager = PermissionManager(this)
         
-        setupTransitions()
+        setupSystemUI()
         loadPreferences()
-        
-        intent?.also { handleRecordingIntent(it) }
-
-        WindowCompat.setDecorFitsSystemWindows(window, false)
-        window.setBackgroundDrawableResource(android.R.color.transparent)
-        hideStatusBar()
-
         registerReceivers()
         setupWallpaperListener()
-        updatePermissionStates()
+        
+        handleRecordingIntent(intent)
+
+        onBackPressedDispatcher.addCallback(this) { /* Bloquear o manejar cierre */ }
 
         setContent {
             LauncherOrbysTheme(darkTheme = !viewModel.esTemaClaro) {
@@ -137,71 +118,58 @@ class MainActivity : ComponentActivity() {
                     
                     HomeScreen(
                         viewModel = viewModel, 
-                        onPersonalizarClick = { openWallpaperPicker() },
                         onBluetoothRequest = { showBluetoothDialog = true }
                     )
 
-                    // Gestión de Permisos Críticos
-                    val allGranted = isDefault && isAccessibilityOn && canWriteSettings
-                    if (!allGranted) {
-                        UIPermissionOverlay()
-                    }
-
-                    // Gestión de Grabación con Audio
-                    if (showAudioDialog) {
-                        UIAudioDialog()
-                    }
-
-                    // Gestión de Bluetooth On-Demand
-                    if (showBluetoothDialog) {
-                        UIBluetoothDialog()
-                    }
+                    // Overlays de Permisos y Diálogos On-Demand
+                    UIPermissionGuard()
+                    if (showAudioDialog) UIAudioDialog()
+                    if (showBluetoothDialog) UIBluetoothDialog()
                 }
             }
         }
     }
 
-    @Composable
-    private fun UIBluetoothDialog() {
-        OnDemandPermissionDialog(
-            title = "Permiso de Bluetooth",
-            description = "Se requiere permiso para detectar y conectar dispositivos cercanos.",
-            icon = Icons.Default.Bluetooth,
-            onGrant = { 
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                    requestBluetoothLauncher.launch(android.Manifest.permission.BLUETOOTH_CONNECT)
-                }
-            },
-            onDismiss = { showBluetoothDialog = false }
-        )
+    private fun setupSystemUI() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            overrideActivityTransition(OVERRIDE_TRANSITION_OPEN, 0, 0)
+        } else {
+            @Suppress("DEPRECATION") overridePendingTransition(0, 0)
+        }
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        window.setBackgroundDrawableResource(android.R.color.transparent)
+        hideStatusBar()
     }
 
     @Composable
-    private fun UIPermissionOverlay() {
-        val permissionsList = remember(isDefault, canWriteSettings, isAccessibilityOn) {
-            mutableListOf<PermissionItem>().apply {
-                add(PermissionItem("Habilitar Lanzador Predeterminado", "Establecer Orbys como la pantalla de inicio principal", isDefault) {
-                    startActivity(Intent(Settings.ACTION_HOME_SETTINGS))
-                    autoReturnCheck { permissionManager.isDefaultLauncher() }
-                })
-                add(PermissionItem("Habilitar Modificación de Ajustes del Sistema", "Permitir el ajuste de brillo y volumen del sistema", canWriteSettings) {
-                    startActivity(Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS, Uri.parse("package:$packageName")))
-                    autoReturnCheck { permissionManager.canWriteSettings() }
-                })
-                add(PermissionItem("Habilitar Servicio de Accesibilidad", "Activar gestos de navegación y acciones rápidas", isAccessibilityOn) {
-                    startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-                    autoReturnCheck { permissionManager.isAccessibilityEnabled() }
-                })
+    private fun UIPermissionGuard() {
+        val allGranted = viewModel.isDefaultLauncher && viewModel.isAccessibilityEnabled && viewModel.canWriteSettings
+        if (!allGranted) {
+            val permissionsList = remember(viewModel.isDefaultLauncher, viewModel.canWriteSettings, viewModel.isAccessibilityEnabled) {
+                listOf(
+                    PermissionItem("Lanzador Predeterminado", "Establecer Orbys como inicio principal", viewModel.isDefaultLauncher) {
+                        startActivity(Intent(Settings.ACTION_HOME_SETTINGS))
+                        viewModel.startAutoCheck({ permissionManager.isDefaultLauncher() }, ::returnToMain)
+                    },
+                    PermissionItem("Ajustes del Sistema", "Permitir ajuste de brillo y volumen", viewModel.canWriteSettings) {
+                        startActivity(Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS, Uri.parse("package:$packageName")))
+                        viewModel.startAutoCheck({ permissionManager.canWriteSettings() }, ::returnToMain)
+                    },
+                    PermissionItem("Servicio de Accesibilidad", "Activar gestos y acciones rápidas", viewModel.isAccessibilityEnabled) {
+                        startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                        viewModel.startAutoCheck({ permissionManager.isAccessibilityEnabled() }, ::returnToMain)
+                    }
+                )
             }
+            PermissionDialog(permissions = permissionsList, onDismiss = {})
         }
-        PermissionDialog(permissions = permissionsList, onDismiss = {})
     }
 
     @Composable
     private fun UIAudioDialog() {
         OnDemandPermissionDialog(
             title = "¿Grabar con audio?",
-            description = "Se requiere acceso al micrófono.",
+            description = "Se requiere acceso al micrófono para capturar sonido.",
             icon = Icons.Default.Mic,
             onGrant = { requestAudioLauncher.launch(android.Manifest.permission.RECORD_AUDIO) },
             onDismiss = { 
@@ -213,46 +181,34 @@ class MainActivity : ComponentActivity() {
         )
     }
 
-    private fun autoReturnCheck(check: () -> Boolean) {
-        lifecycleScope.launch {
-            delay(500) // Reducido para más rapidez
-            var attempts = 0
-            while (isActive && attempts < 30) { // Límite de 30 segundos
-                if (check()) {
-                    updatePermissionStates()
-                    // Aseguramos que el estado se propague antes de volver
-                    delay(200)
-                    val intent = Intent(this@MainActivity, MainActivity::class.java).apply {
-                        addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
-                    }
-                    startActivity(intent)
-                    break
+    @Composable
+    private fun UIBluetoothDialog() {
+        OnDemandPermissionDialog(
+            title = "Permiso de Bluetooth",
+            description = "Se requiere permiso para gestionar conexiones inalámbricas.",
+            icon = Icons.Default.Bluetooth,
+            onGrant = { 
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    requestBluetoothLauncher.launch(android.Manifest.permission.BLUETOOTH_CONNECT)
                 }
-                delay(1000)
-                attempts++
-            }
-        }
+            },
+            onDismiss = { showBluetoothDialog = false }
+        )
     }
 
-    private fun updatePermissionStates() {
-        isDefault = permissionManager.isDefaultLauncher()
-        isAccessibilityOn = permissionManager.isAccessibilityEnabled()
-        canWriteSettings = permissionManager.canWriteSettings()
-        hasBluetoothPermission = permissionManager.hasBluetoothPermission()
-    }
-
-    private fun setupTransitions() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            overrideActivityTransition(OVERRIDE_TRANSITION_OPEN, 0, 0)
-        } else {
-            @Suppress("DEPRECATION") overridePendingTransition(0, 0)
-        }
+    private fun returnToMain() {
+        startActivity(Intent(this, MainActivity::class.java).apply {
+            addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+        })
     }
 
     private fun registerReceivers() {
-        ContextCompat.registerReceiver(this, receptorBarra, IntentFilter(Constants.ACTION_NAVBAR_COMMAND), ContextCompat.RECEIVER_EXPORTED)
-        ContextCompat.registerReceiver(this, receptorBluetooth, IntentFilter(Constants.ACTION_REQUEST_BLUETOOTH), ContextCompat.RECEIVER_EXPORTED)
-        registerReceiver(receptorWallpaper, IntentFilter(Intent.ACTION_WALLPAPER_CHANGED))
+        val filter = IntentFilter().apply {
+            addAction(Constants.ACTION_NAVBAR_COMMAND)
+            addAction(Constants.ACTION_REQUEST_BLUETOOTH)
+            addAction(Intent.ACTION_WALLPAPER_CHANGED)
+        }
+        ContextCompat.registerReceiver(this, internalReceiver, filter, ContextCompat.RECEIVER_EXPORTED)
     }
 
     private fun setupWallpaperListener() {
@@ -263,24 +219,6 @@ class MainActivity : ComponentActivity() {
                 }
             }, Handler(Looper.getMainLooper()))
         }
-    }
-
-    private fun openWallpaperPicker() {
-        try {
-            startActivity(Intent(Intent.ACTION_SET_WALLPAPER))
-        } catch (e: Exception) {
-            try {
-                startActivity(Intent(WallpaperManager.ACTION_CHANGE_LIVE_WALLPAPER))
-            } catch (e2: Exception) {
-                Toast.makeText(this, "Error en selector", Toast.LENGTH_SHORT).show()
-            }
-        }
-    }
-
-    private fun hideStatusBar() {
-        val controller = WindowCompat.getInsetsController(window, window.decorView)
-        controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-        controller.hide(WindowInsetsCompat.Type.systemBars())
     }
 
     private fun updateThemeFromColors(colors: WallpaperColors?) {
@@ -297,33 +235,24 @@ class MainActivity : ComponentActivity() {
 
     private fun loadPreferences() {
         val fondoStr = settingsRepository.getFondo()
-        val esClaro = settingsRepository.getEsClaro()
-        viewModel.updateTheme(esClaro)
+        viewModel.updateTheme(settingsRepository.getEsClaro())
         fondoStr?.takeIf { it.isNotEmpty() }?.let {
             if (it.startsWith("content://")) viewModel.setBackground(Uri.parse(it), null)
-            else try { viewModel.setBackground(null, Color(it.toULong())) } catch (e: Exception) {}
+            else try { viewModel.setBackground(null, Color(it.toULong())) } catch (_: Exception) {}
         }
     }
 
-    override fun onResume() { 
-        super.onResume()
-        hideStatusBar()
-        updatePermissionStates()
+    private fun hideStatusBar() {
+        val controller = WindowCompat.getInsetsController(window, window.decorView)
+        controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        controller.hide(WindowInsetsCompat.Type.systemBars())
     }
 
-    override fun onNewIntent(intent: Intent) {
-        super.onNewIntent(intent)
-        setIntent(intent)
-        handleRecordingIntent(intent)
-    }
-
-    private fun handleRecordingIntent(intent: Intent) {
-        if (intent.action == Constants.ACTION_START_SCREEN_RECORD) {
-            val hasAudio = permissionManager.hasAudioPermission()
+    private fun handleRecordingIntent(intent: Intent?) {
+        if (intent?.action == Constants.ACTION_START_SCREEN_RECORD) {
             val mpm = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
             val captureIntent = mpm.createScreenCaptureIntent()
-
-            if (!hasAudio) {
+            if (!permissionManager.hasAudioPermission()) {
                 pendingRecordingIntent = captureIntent
                 showAudioDialog = true
             } else {
@@ -332,13 +261,18 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun startProjection(intent: Intent) {
-        screenCaptureLauncher.launch(intent)
+    private fun startProjection(intent: Intent) = screenCaptureLauncher.launch(intent)
+
+    override fun onResume() { 
+        super.onResume()
+        hideStatusBar()
+        viewModel.updatePermissionStates()
     }
 
-    override fun onBackPressed() {
-        if (viewModel.mostrarMenuContextual) viewModel.cerrarTodo()
-        else super.onBackPressed()
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleRecordingIntent(intent)
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -348,8 +282,6 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() { 
         super.onDestroy()
-        try { unregisterReceiver(receptorBarra) } catch (e: Exception) {}
-        try { unregisterReceiver(receptorBluetooth) } catch (e: Exception) {}
-        try { unregisterReceiver(receptorWallpaper) } catch (e: Exception) {}
+        try { unregisterReceiver(internalReceiver) } catch (_: Exception) {}
     }
 }

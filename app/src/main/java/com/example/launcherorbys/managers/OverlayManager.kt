@@ -14,6 +14,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -24,20 +25,23 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.LifecycleOwner
-import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.setViewTreeLifecycleOwner
+import androidx.lifecycle.setViewTreeViewModelStoreOwner
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
-import com.example.launcherorbys.ui.components.*
+import com.example.launcherorbys.ui.drawer.AppDrawer
+import com.example.launcherorbys.ui.navigation.NavBar
+import com.example.launcherorbys.ui.navigation.SideNavBar
+import com.example.launcherorbys.ui.recording.RecordingTimer
+import com.example.launcherorbys.ui.recording.StopRecordingDialog
+import com.example.launcherorbys.ui.system.SystemOptionsPanel
 import com.example.launcherorbys.ui.theme.LauncherOrbysTheme
 import com.example.launcherorbys.utils.Constants
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 
 /**
- * Orquestador de las capas de superposición (Overlays) del Launcher.
- * Gestiona la creación, actualización y eliminación de las vistas de Compose sobre el sistema.
+ * Orquestador central de las capas de superposición (Overlays).
+ * Gestiona la jerarquía visual de Compose sobre el sistema Android.
  */
 class OverlayManager(
     private val service: AccessibilityService,
@@ -45,9 +49,9 @@ class OverlayManager(
     private val appLauncher: AppLauncher
 ) {
     private val windowManager = service.getSystemService(Context.WINDOW_SERVICE) as WindowManager
-    private val context: Context get() = service
+    private val recordingManager = RecordingManager(service)
 
-    // --- Referencias a Vistas (ComposeView) ---
+    // --- Vistas de Superposición ---
     private lateinit var vistaNav: ComposeView
     private lateinit var vistaDrawer: ComposeView
     private lateinit var vistaSystemOptions: ComposeView
@@ -55,12 +59,12 @@ class OverlayManager(
     private lateinit var vistaSideNavRight: ComposeView
     private lateinit var vistaTimer: ComposeView
 
-    // --- Parámetros de Ventana (LayoutParams) ---
+    // --- Parámetros de Ventana ---
     private lateinit var paramsSideLeft: WindowManager.LayoutParams
     private lateinit var paramsSideRight: WindowManager.LayoutParams
     private lateinit var paramsTimer: WindowManager.LayoutParams
 
-    // --- Estado Global de la Interfaz ---
+    // --- Estado de la Interfaz ---
     var iconColorNav by mutableStateOf(Color.White)
     var navBarBackground by mutableStateOf(Color.Black)
     var drawerVisible by mutableStateOf(false)
@@ -68,19 +72,12 @@ class OverlayManager(
     var navBarAtTop by mutableStateOf(false)
     var navBarExpanded by mutableStateOf(true)
     var clockAtLeft by mutableStateOf(true)
-
-    // --- Estado de la Grabación de Pantalla ---
-    var isRecording by mutableStateOf(false)
-    var recordingSeconds by mutableIntStateOf(0)
-    var showStopConfirmation by mutableStateOf(false)
-    private var timerJob: Job? = null
     
-    // Alturas dinámicas para evitar colisiones
     private var sideNavHeightLeft by mutableIntStateOf(0)
     private var sideNavHeightRight by mutableIntStateOf(0)
 
     /**
-     * Inicializa y despliega todas las capas base.
+     * Despliega todas las capas visuales necesarias.
      */
     fun setupOverlays() {
         setupDrawerOverlay()
@@ -91,22 +88,15 @@ class OverlayManager(
     }
 
     /**
-     * Procesa y ejecuta acciones provenientes de la UI.
+     * Canaliza comandos desde la UI hacia acciones del sistema o cambios de estado.
      */
     fun manejarComando(comando: String?) {
         when (comando) {
-            "BACK" -> {
-                if (drawerVisible) toggleDrawer() 
-                else service.performGlobalAction(GLOBAL_ACTION_BACK)
-            }
+            "BACK" -> if (drawerVisible) toggleDrawer() else service.performGlobalAction(GLOBAL_ACTION_BACK)
             "HOME" -> {
                 if (drawerVisible) toggleDrawer()
                 service.performGlobalAction(GLOBAL_ACTION_HOME)
-                val intent = Intent(Intent.ACTION_MAIN).apply {
-                    addCategory(Intent.CATEGORY_HOME)
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION)
-                }
-                service.startActivity(intent)
+                launchHomeIntent()
             }
             "RECENTS" -> {
                 if (drawerVisible) toggleDrawer()
@@ -115,9 +105,10 @@ class OverlayManager(
             }
             "APPS" -> toggleDrawer()
             "SYSTEM_OPTIONS" -> toggleSystemOptions()
+            "WALLPAPER" -> openWallpaperPicker()
             "GOOGLE" -> appLauncher.abrirUrl("https://www.google.com")
             "FILES" -> appLauncher.abrirAppArchivos()
-            "CLOCK" -> if (!appLauncher.abrirRelojSistema()) toast("No se encontró el reloj")
+            "CLOCK" -> if (!appLauncher.abrirRelojSistema()) toast("Reloj no encontrado")
             "TOGGLE_NAVBAR_POSITION" -> toggleNavBarPosition()
             "TOGGLE_NAVBAR_VISIBILITY" -> toggleNavBarVisibility()
             "TOGGLE_CLOCK_SIDE" -> {
@@ -127,7 +118,12 @@ class OverlayManager(
         }
     }
 
-    // --- Métodos de Control de Capas ---
+    // --- Gestión de Capas Específicas ---
+
+    fun closeAllOverlays() {
+        if (drawerVisible) toggleDrawer()
+        if (systemOptionsVisible) toggleSystemOptions()
+    }
 
     fun toggleNavBarVisibility() {
         navBarExpanded = !navBarExpanded
@@ -139,32 +135,15 @@ class OverlayManager(
         navBarAtTop = !navBarAtTop
         setupBarraNavegacion()
         actualizarPosicionesSideNav()
-        context.sendBroadcast(Intent(Constants.ACTION_NAVBAR_POSITION_CHANGED).putExtra("atTop", navBarAtTop))
+        service.sendBroadcast(Intent(Constants.ACTION_NAVBAR_POSITION_CHANGED).putExtra("atTop", navBarAtTop))
     }
 
     fun toggleDrawer() {
         if (!drawerVisible) {
-            openDrawer()
-        } else {
-            closeDrawer()
-        }
-    }
-
-    fun openDrawer() {
-        if (!drawerVisible) {
             drawerVisible = true
-            windowManager.addView(vistaDrawer, createOverlayParams(
-                WindowManager.LayoutParams.MATCH_PARENT, 
-                WindowManager.LayoutParams.MATCH_PARENT
-            ))
-        }
-    }
-
-    fun closeDrawer() {
-        if (drawerVisible) {
-            if (::vistaDrawer.isInitialized && vistaDrawer.parent != null) {
-                windowManager.removeView(vistaDrawer)
-            }
+            windowManager.addView(vistaDrawer, createOverlayParams(MATCH_PARENT, MATCH_PARENT))
+        } else {
+            if (::vistaDrawer.isInitialized && vistaDrawer.parent != null) windowManager.removeView(vistaDrawer)
             drawerVisible = false
         }
     }
@@ -173,14 +152,9 @@ class OverlayManager(
         if (!systemOptionsVisible) {
             systemManager.actualizarValoresSistema()
             systemOptionsVisible = true
-            windowManager.addView(vistaSystemOptions, createOverlayParams(
-                WindowManager.LayoutParams.MATCH_PARENT, 
-                WindowManager.LayoutParams.MATCH_PARENT
-            ))
+            windowManager.addView(vistaSystemOptions, createOverlayParams(MATCH_PARENT, MATCH_PARENT))
         } else {
-            if (::vistaSystemOptions.isInitialized && vistaSystemOptions.parent != null) {
-                windowManager.removeView(vistaSystemOptions)
-            }
+            if (::vistaSystemOptions.isInitialized && vistaSystemOptions.parent != null) windowManager.removeView(vistaSystemOptions)
             systemOptionsVisible = false
         }
     }
@@ -190,18 +164,17 @@ class OverlayManager(
         iconColorNav = if (esClaro) Color.White else Color.Black
     }
 
-    // --- Configuraciones de Vistas Individuales ---
+    // --- Configuración de Vistas Compose ---
 
     private fun setupBarraNavegacion() {
-        val density = context.resources.displayMetrics.density
+        val density = service.resources.displayMetrics.density
         val heightPx = if (!navBarExpanded) 1 else (48 * density).toInt()
 
-        val params = createOverlayParams(WindowManager.LayoutParams.MATCH_PARENT, heightPx).apply {
+        val params = createOverlayParams(MATCH_PARENT, heightPx).apply {
             gravity = if (navBarAtTop) Gravity.TOP else Gravity.BOTTOM
             flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                     WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
                     WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
-            
             if (!navBarExpanded) flags = flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
         }
 
@@ -210,7 +183,7 @@ class OverlayManager(
                 NavBar(
                     onActionClicked = { 
                         manejarComando(it)
-                        context.sendBroadcast(Intent(Constants.ACTION_NAVBAR_COMMAND).putExtra("comando", it)) 
+                        service.sendBroadcast(Intent(Constants.ACTION_NAVBAR_COMMAND).putExtra("comando", it)) 
                     },
                     iconColor = iconColorNav,
                     backgroundColor = navBarBackground,
@@ -226,8 +199,7 @@ class OverlayManager(
     }
 
     private fun setupSideNavs() {
-        val initialY = (context.resources.displayMetrics.heightPixels / 3)
-        
+        val initialY = (service.resources.displayMetrics.heightPixels / 3)
         paramsSideLeft = createSideNavParams(Gravity.START, initialY)
         paramsSideRight = createSideNavParams(Gravity.END, initialY)
 
@@ -258,47 +230,13 @@ class OverlayManager(
         }
     }
 
-    private fun actualizarPosicionesSideNav() {
-        ajustarPosicionSideNav(true)
-        ajustarPosicionSideNav(false)
-    }
-
-    private fun ajustarPosicionSideNav(isLeft: Boolean) {
-        if (!(::paramsSideLeft.isInitialized && ::paramsSideRight.isInitialized)) return
-        val params = if (isLeft) paramsSideLeft else paramsSideRight
-        val vista = if (isLeft) vistaSideNavLeft else vistaSideNavRight
-        
-        if (vista.parent != null) {
-            constrainSideNav(isLeft, params)
-            windowManager.updateViewLayout(vista, params)
-        }
-    }
-
-    private fun constrainSideNav(isLeft: Boolean, params: WindowManager.LayoutParams) {
-        val density = context.resources.displayMetrics.density
-        val screenHeight = context.resources.displayMetrics.heightPixels
-        val viewHeight = if (isLeft) sideNavHeightLeft else sideNavHeightRight
-        
-        val navHeight = if (!navBarExpanded) 0 else (48 * density).toInt()
-        val topSafe = (60 * density).toInt() 
-        
-        val minY = if (navBarAtTop) (navHeight + topSafe) else topSafe
-        val maxY = if (navBarAtTop) {
-            screenHeight - viewHeight - (16 * density).toInt()
-        } else {
-            screenHeight - viewHeight - navHeight - (8 * density).toInt()
-        }
-        
-        params.y = params.y.coerceIn(minY, maxY.coerceAtLeast(minY))
-    }
-
     private fun setupDrawerOverlay() {
         vistaDrawer = createComposeView {
             Box(
-                modifier = Modifier.fillMaxSize().clickable(null, null) { closeDrawer() },
+                modifier = Modifier.fillMaxSize().clickable(null, null) { toggleDrawer() },
                 contentAlignment = Alignment.Center
             ) {
-                AppDrawer(onClose = { closeDrawer() })
+                AppDrawer(onClose = { toggleDrawer() })
             }
         }
     }
@@ -310,44 +248,14 @@ class OverlayManager(
                 contentAlignment = if (navBarAtTop) Alignment.TopCenter else Alignment.BottomCenter
             ) {
                 SystemOptionsPanel(
-                    onSettingsClick = { 
-                        systemManager.launchSettings(Settings.ACTION_SETTINGS)
-                        vistaSystemOptions.postDelayed({ toggleSystemOptions() }, 200)
-                    },
-                    onWifiClick = { 
-                        systemManager.launchSettings(Settings.ACTION_WIFI_SETTINGS)
-                        vistaSystemOptions.postDelayed({ toggleSystemOptions() }, 200)
-                    },
-                    onBluetoothClick = { 
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && 
-                            context.checkSelfPermission(android.Manifest.permission.BLUETOOTH_CONNECT) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
-                            context.sendBroadcast(Intent(Constants.ACTION_REQUEST_BLUETOOTH).setPackage(context.packageName))
-                        } else {
-                            systemManager.abrirAjustesBT()
-                        }
-                        toggleSystemOptions() 
-                    },
+                    onSettingsClick = { openSettings(Settings.ACTION_SETTINGS) },
+                    onWifiClick = { openSettings(Settings.ACTION_WIFI_SETTINGS) },
+                    onBluetoothClick = { handleBluetoothAction() },
+                    onWallpaperClick = { openWallpaperPicker() },
                     onMuteClick = { systemManager.toggleMute() },
-                    onPowerClick = { 
-                        service.performGlobalAction(GLOBAL_ACTION_POWER_DIALOG)
-                        toggleSystemOptions() 
-                    },
-                    onScreenshotClick = {
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                            service.performGlobalAction(GLOBAL_ACTION_TAKE_SCREENSHOT)
-                        } else {
-                            toast("No soportado en esta versión")
-                        }
-                        toggleSystemOptions()
-                    },
-                    onRecordClick = { 
-                        if (isRecording) {
-                            context.stopService(Intent(context, com.example.launcherorbys.services.ScreenRecordService::class.java))
-                        } else {
-                            appLauncher.iniciarGrabacionEstandar()
-                        }
-                        toggleSystemOptions() 
-                    },
+                    onPowerClick = { service.performGlobalAction(GLOBAL_ACTION_POWER_DIALOG); toggleSystemOptions() },
+                    onScreenshotClick = { takeScreenshot() },
+                    onRecordClick = { handleRecordAction() },
                     isWifiOn = systemManager.isWifiOn,
                     isBluetoothOn = systemManager.isBluetoothOn,
                     isMuted = systemManager.isMuted,
@@ -366,37 +274,28 @@ class OverlayManager(
     }
 
     private fun setupTimerOverlay() {
-        paramsTimer = createOverlayParams(
-            WindowManager.LayoutParams.WRAP_CONTENT,
-            WindowManager.LayoutParams.WRAP_CONTENT
-        ).apply {
-            gravity = Gravity.TOP or Gravity.START
-            x = (16 * context.resources.displayMetrics.density).toInt()
-            y = (8 * context.resources.displayMetrics.density).toInt()
+        paramsTimer = createSideNavParams(Gravity.START, 8).apply {
+            x = (16 * service.resources.displayMetrics.density).toInt()
         }
 
         vistaTimer = createComposeView {
             Box(modifier = Modifier.fillMaxSize()) {
-                if (isRecording) {
+                if (recordingManager.isRecording) {
                     Box(modifier = Modifier.padding(top = 8.dp, start = 16.dp)) {
                         RecordingTimer(
-                            seconds = recordingSeconds,
+                            seconds = recordingManager.recordingSeconds,
                             onStop = { 
-                                showStopConfirmation = true 
+                                recordingManager.showStopConfirmation = true 
                                 actualizarVentanaTimer(true)
                             }
                         )
                     }
                 }
-
-                if (showStopConfirmation) {
+                if (recordingManager.showStopConfirmation) {
                     StopRecordingDialog(
-                        onConfirm = { 
-                            showStopConfirmation = false
-                            stopRecording() 
-                        },
+                        onConfirm = { recordingManager.stopRecording() },
                         onCancel = { 
-                            showStopConfirmation = false 
+                            recordingManager.showStopConfirmation = false 
                             actualizarVentanaTimer(false)
                         }
                     )
@@ -405,77 +304,128 @@ class OverlayManager(
         }
     }
 
+    // --- Lógica de Grabación ---
+
+    fun startRecording() {
+        recordingManager.startTimer(service as LifecycleOwner)
+        actualizarVentanaTimer(false)
+        if (vistaTimer.parent == null) windowManager.addView(vistaTimer, paramsTimer)
+    }
+
+    fun finishRecordingUI() {
+        recordingManager.resetState()
+        if (::vistaTimer.isInitialized && vistaTimer.parent != null) windowManager.removeView(vistaTimer)
+    }
+
+    private fun handleRecordAction() {
+        if (recordingManager.isRecording) {
+            recordingManager.stopRecording()
+        } else {
+            appLauncher.iniciarGrabacionEstandar()
+        }
+        toggleSystemOptions()
+    }
+
     private fun actualizarVentanaTimer(full: Boolean) {
         if (!::paramsTimer.isInitialized || vistaTimer.parent == null) return
-        if (full) {
-            paramsTimer.width = WindowManager.LayoutParams.MATCH_PARENT
-            paramsTimer.height = WindowManager.LayoutParams.MATCH_PARENT
-        } else {
-            paramsTimer.width = WindowManager.LayoutParams.WRAP_CONTENT
-            paramsTimer.height = WindowManager.LayoutParams.WRAP_CONTENT
-        }
+        paramsTimer.width = if (full) MATCH_PARENT else WRAP_CONTENT
+        paramsTimer.height = if (full) MATCH_PARENT else WRAP_CONTENT
         windowManager.updateViewLayout(vistaTimer, paramsTimer)
     }
 
-    fun startRecording() {
-        if (isRecording) return
-        isRecording = true
-        recordingSeconds = 0
-        showStopConfirmation = false
-        
-        actualizarVentanaTimer(false)
-        if (vistaTimer.parent == null) windowManager.addView(vistaTimer, paramsTimer)
+    // --- Helpers Internos ---
 
-        timerJob?.cancel()
-        timerJob = (service as LifecycleOwner).lifecycleScope.launch {
-            while (isRecording) {
-                delay(1000)
-                recordingSeconds++
+    private fun handleBluetoothAction() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && 
+            service.checkSelfPermission(android.Manifest.permission.BLUETOOTH_CONNECT) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            service.sendBroadcast(Intent(Constants.ACTION_REQUEST_BLUETOOTH).setPackage(service.packageName))
+        } else {
+            systemManager.abrirAjustesBT()
+        }
+        toggleSystemOptions()
+    }
+
+    private fun takeScreenshot() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) service.performGlobalAction(GLOBAL_ACTION_TAKE_SCREENSHOT)
+        else toast("No soportado")
+        toggleSystemOptions()
+    }
+
+    private fun openSettings(action: String) {
+        systemManager.launchSettings(action)
+        vistaSystemOptions.postDelayed({ toggleSystemOptions() }, 200)
+    }
+
+    private fun openWallpaperPicker() {
+        try {
+            service.startActivity(Intent(Intent.ACTION_SET_WALLPAPER).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        } catch (_: Exception) {
+            try {
+                service.startActivity(Intent(android.app.WallpaperManager.ACTION_CHANGE_LIVE_WALLPAPER).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            } catch (_: Exception) { toast("Error en selector de fondo") }
+        }
+        if (systemOptionsVisible) toggleSystemOptions()
+    }
+
+    private fun launchHomeIntent() {
+        val intent = Intent(Intent.ACTION_MAIN).apply {
+            addCategory(Intent.CATEGORY_HOME)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION)
+        }
+        service.startActivity(intent)
+    }
+
+    private fun actualizarPosicionesSideNav() {
+        ajustarPosicionSideNav(true)
+        ajustarPosicionSideNav(false)
+    }
+
+    private fun ajustarPosicionSideNav(isLeft: Boolean) {
+        if (!(::paramsSideLeft.isInitialized && ::paramsSideRight.isInitialized)) return
+        val params = if (isLeft) paramsSideLeft else paramsSideRight
+        val vista = if (isLeft) vistaSideNavLeft else vistaSideNavRight
+        if (vista.parent != null) {
+            constrainSideNav(isLeft, params)
+            windowManager.updateViewLayout(vista, params)
+        }
+    }
+
+    private fun constrainSideNav(isLeft: Boolean, params: WindowManager.LayoutParams) {
+        val density = service.resources.displayMetrics.density
+        val screenHeight = service.resources.displayMetrics.heightPixels
+        val viewHeight = if (isLeft) sideNavHeightLeft else sideNavHeightRight
+        val navHeight = if (!navBarExpanded) 0 else (48 * density).toInt()
+        val minY = if (navBarAtTop) (navHeight + (60 * density).toInt()) else (60 * density).toInt()
+        val maxY = screenHeight - viewHeight - (if (navBarAtTop) 16 * density else (navHeight + 8 * density)).toInt()
+        params.y = params.y.coerceIn(minY, maxY.coerceAtLeast(minY))
+    }
+
+    private fun createComposeView(content: @Composable () -> Unit): ComposeView {
+        return ComposeView(service).apply {
+            setViewTreeLifecycleOwner(service as LifecycleOwner)
+            setViewTreeSavedStateRegistryOwner(service as SavedStateRegistryOwner)
+            setViewTreeViewModelStoreOwner(service as ViewModelStoreOwner)
+            setContent { 
+                LauncherOrbysTheme(darkTheme = navBarBackground == Color.White) { 
+                    content() 
+                } 
             }
         }
     }
 
-    fun stopRecording() {
-        context.stopService(Intent(context, com.example.launcherorbys.services.ScreenRecordService::class.java))
-        finishRecordingUI()
-    }
-
-    fun finishRecordingUI() {
-        isRecording = false
-        showStopConfirmation = false
-        timerJob?.cancel()
-        if (::vistaTimer.isInitialized && vistaTimer.parent != null) {
-            windowManager.removeView(vistaTimer)
-        }
-    }
-
-    // --- Utilidades Estáticas ---
-
-    private fun createComposeView(content: @androidx.compose.runtime.Composable () -> Unit): ComposeView {
-        return ComposeView(context).apply {
-            setViewTreeLifecycleOwner(service as LifecycleOwner)
-            setViewTreeSavedStateRegistryOwner(service as SavedStateRegistryOwner)
-            setContent { LauncherOrbysTheme { content() } }
-        }
-    }
-
     private fun createOverlayParams(w: Int, h: Int) = WindowManager.LayoutParams(
-        w, h, 
-        WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+        w, h, WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
         WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
-        PixelFormat.TRANSLUCENT
+        android.graphics.PixelFormat.TRANSLUCENT
     )
 
-    private fun createSideNavParams(grav: Int, initialY: Int) = createOverlayParams(
-        WindowManager.LayoutParams.WRAP_CONTENT, 
-        WindowManager.LayoutParams.WRAP_CONTENT
-    ).apply {
+    private fun createSideNavParams(grav: Int, initialY: Int) = createOverlayParams(WRAP_CONTENT, WRAP_CONTENT).apply {
         gravity = grav or Gravity.TOP
         y = initialY
         flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
     }
 
-    private fun toast(m: String) = Toast.makeText(context, m, Toast.LENGTH_SHORT).show()
+    private fun toast(m: String) = Toast.makeText(service, m, Toast.LENGTH_SHORT).show()
 
     fun onDestroy() {
         val vistas = listOf(
@@ -486,11 +436,15 @@ class OverlayManager(
             if (::vistaSideNavRight.isInitialized) vistaSideNavRight else null,
             if (::vistaTimer.isInitialized) vistaTimer else null
         )
-        
         vistas.forEach { vista ->
             if (vista != null && vista.parent != null) {
-                try { windowManager.removeView(vista) } catch (e: Exception) {}
+                try { windowManager.removeView(vista) } catch (_: Exception) {}
             }
         }
+    }
+
+    companion object {
+        private const val MATCH_PARENT = WindowManager.LayoutParams.MATCH_PARENT
+        private const val WRAP_CONTENT = WindowManager.LayoutParams.WRAP_CONTENT
     }
 }

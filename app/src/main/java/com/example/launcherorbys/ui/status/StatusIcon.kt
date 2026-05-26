@@ -1,4 +1,4 @@
-package com.example.launcherorbys.ui.components
+package com.example.launcherorbys.ui.status
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable

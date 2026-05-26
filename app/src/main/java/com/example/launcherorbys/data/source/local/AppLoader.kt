@@ -17,34 +17,31 @@ class AppLoader(private val context: Context) {
      * @return Una lista de objetos [AppInfo] ordenada alfabéticamente por etiqueta.
      */
     fun loadInstalledApps(): List<AppInfo> {
-        // El PackageManager es el "bibliotecario" del sistema Android
-        val pm = context.packageManager
+        try {
+            val pm = context.packageManager
+            val intent = Intent(Intent.ACTION_MAIN, null).apply {
+                addCategory(Intent.CATEGORY_LAUNCHER)
+            }
+            val activities = pm.queryIntentActivities(intent, 0)
 
-        // Creamos un "Intent" para buscar actividades principales (MAIN)
-        // que estén en la categoría LAUNCHER (las que aparecen en el menú)
-        val intent = Intent(Intent.ACTION_MAIN, null).apply {
-            addCategory(Intent.CATEGORY_LAUNCHER)
+            return activities.mapNotNull {
+                try {
+                    val appInfo = it.activityInfo.applicationInfo
+                    val isSystemApp = (appInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0
+                    val isUpdatedSystemApp = (appInfo.flags and ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) != 0
+
+                    AppInfo(
+                        label = it.loadLabel(pm).toString(),
+                        packageName = it.activityInfo.packageName,
+                        icon = it.loadIcon(pm),
+                        isUninstallable = !isSystemApp || isUpdatedSystemApp
+                    )
+                } catch (e: Exception) {
+                    null
+                }
+            }.sortedBy { it.label.lowercase() }
+        } catch (e: Exception) {
+            return emptyList()
         }
-
-        // Consultamos al sistema qué actividades coinciden con ese filtro
-        val activities = pm.queryIntentActivities(intent, 0)
-
-        // Transformamos la lista de objetos 'ResolveInfo' a nuestra clase personalizada 'AppInfo'
-        return activities.map {
-            val appInfo = it.activityInfo.applicationInfo
-            val isSystemApp = (appInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0
-            val isUpdatedSystemApp = (appInfo.flags and ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) != 0
-
-            AppInfo(
-                // Extraemos el nombre de la app (ej: "WhatsApp")
-                label = it.loadLabel(pm).toString(),
-                // Extraemos el ID único del paquete (ej: "com.whatsapp")
-                packageName = it.activityInfo.packageName,
-                // Extraemos el icono visual de la aplicación
-                icon = it.loadIcon(pm),
-                // Es desinstalable si no es una app de sistema, o si es una actualización de una de sistema
-                isUninstallable = !isSystemApp || isUpdatedSystemApp
-            )
-        }.sortedBy { it.label.lowercase() } // Ordenamos la lista alfabéticamente (A-Z)
     }
 }

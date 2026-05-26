@@ -1,4 +1,4 @@
-package com.example.launcherorbys.ui.components.status
+package com.example.launcherorbys.ui.status
 
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -9,7 +9,6 @@ import android.provider.Settings
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Usb
 import androidx.compose.runtime.*
-import com.example.launcherorbys.ui.components.StatusIcon
 
 /**
  * Gestiona el estado y la visualización del icono de USB en la barra de estado.
