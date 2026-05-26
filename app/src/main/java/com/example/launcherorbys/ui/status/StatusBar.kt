@@ -5,7 +5,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.unit.dp
+import com.example.launcherorbys.ui.theme.Dimens
 
 /**
  * Barra de estado superior del Launcher.
@@ -21,9 +21,9 @@ fun StatusBar(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 4.dp),
+            .padding(horizontal = Dimens.PaddingLarge, vertical = Dimens.PaddingSmall),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(10.dp)
+        horizontalArrangement = Arrangement.spacedBy(Dimens.StatusBarPaddingTop)
     ) {
         // Empuja el contenido hacia la derecha
         Spacer(modifier = Modifier.weight(1f))

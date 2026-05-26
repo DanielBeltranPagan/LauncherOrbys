@@ -22,6 +22,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.example.launcherorbys.ui.status.StatusBar
+import com.example.launcherorbys.ui.theme.Dimens
 import com.example.launcherorbys.utils.Constants
 
 /**
@@ -65,7 +66,7 @@ fun HomeScreen(
             // Renderizado del fondo de pantalla
             WallpaperContainer(viewModel)
 
-            val statusBarPadding = if (viewModel.navBarAtTop) 55.dp else 10.dp
+            val statusBarPadding = if (viewModel.navBarAtTop) Dimens.StatusBarPaddingTopNavAtTop else Dimens.StatusBarPaddingTop
 
             StatusBar(
                 modifier = Modifier

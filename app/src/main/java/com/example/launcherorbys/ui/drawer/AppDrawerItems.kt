@@ -30,15 +30,16 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.graphics.drawable.toBitmap
 import com.example.launcherorbys.data.model.AppInfo
+import com.example.launcherorbys.ui.theme.Dimens
 
 /**
  * Encabezado de sección para el LazyVerticalGrid.
  */
 @Composable
 fun SectionHeader(text: String) {
-    Column(modifier = Modifier.padding(vertical = 8.dp, horizontal = 8.dp)) {
+    Column(modifier = Modifier.padding(vertical = Dimens.PaddingMedium, horizontal = Dimens.PaddingMedium)) {
         HorizontalDivider(color = Color.White.copy(alpha = 0.1f), thickness = 1.dp)
-        Spacer(modifier = Modifier.height(4.dp))
+        Spacer(modifier = Modifier.height(Dimens.PaddingSmall))
         Text(text, style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.4f))
     }
 }
@@ -81,7 +82,7 @@ fun AppItem(
                         scaleY = 1.1f
                     }
                 }
-                .clip(RoundedCornerShape(12.dp))
+                .clip(RoundedCornerShape(Dimens.RadiusMedium))
                 .pointerInput(Unit) {
                     detectTapGestures(
                         onTap = {
@@ -100,23 +101,23 @@ fun AppItem(
                         }
                     )
                 }
-                .padding(4.dp),
+                .padding(Dimens.PaddingSmall),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             app.icon?.let {
                 Image(
                     bitmap = it.toBitmap().asImageBitmap(), 
                     contentDescription = null, 
-                    modifier = Modifier.size(44.dp)
+                    modifier = Modifier.size(Dimens.AppIconSize)
                 )
             }
-            Spacer(modifier = Modifier.height(4.dp))
+            Spacer(modifier = Modifier.height(Dimens.PaddingSmall))
             Text(
                 text = app.label, 
                 style = MaterialTheme.typography.labelSmall, 
                 maxLines = 1, 
                 color = if (isSelected) Color.White.copy(alpha = 0.6f) else Color.White,
-                fontSize = 11.sp
+                fontSize = Dimens.TextSmall
             )
         }
 
@@ -136,7 +137,7 @@ private fun BoxScope.AppActionButtons(
     Column(
         modifier = Modifier
             .align(Alignment.CenterEnd)
-            .offset(x = 4.dp, y = (-12).dp)
+            .offset(x = Dimens.PaddingSmall, y = (-12).dp)
             .wrapContentSize(),
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
@@ -166,14 +167,14 @@ private fun ActionButton(
 ) {
     Box(
         modifier = Modifier
-            .size(26.dp)
+            .size(Dimens.ActionButtonSize)
             .clip(CircleShape)
             .background(color)
             .border(BorderStroke(1.dp, Color.White.copy(alpha = 0.3f)), CircleShape)
             .clickable { onClick() },
         contentAlignment = Alignment.Center
     ) {
-        Icon(icon, null, tint = Color.White, modifier = Modifier.size(16.dp))
+        Icon(icon, null, tint = Color.White, modifier = Modifier.size(Dimens.IconSizeSmall))
     }
 }
 
@@ -267,26 +268,26 @@ private fun ItemContainer(
 ) {
     Column(
         modifier = Modifier
-            .clip(RoundedCornerShape(12.dp))
+            .clip(RoundedCornerShape(Dimens.RadiusMedium))
             .clickable { onClick() }
-            .padding(4.dp),
+            .padding(Dimens.PaddingSmall),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Box(
             modifier = Modifier
-                .size(44.dp)
+                .size(Dimens.AppIconSize)
                 .background(Color.White.copy(alpha = 0.1f), CircleShape),
             contentAlignment = Alignment.Center
         ) {
-            Icon(icon, null, tint = Color.White, modifier = Modifier.size(24.dp))
+            Icon(icon, null, tint = Color.White, modifier = Modifier.size(Dimens.IconSizeMedium))
         }
-        Spacer(modifier = Modifier.height(4.dp))
+        Spacer(modifier = Modifier.height(Dimens.PaddingSmall))
         Text(
             text = label,
             style = MaterialTheme.typography.labelSmall,
             maxLines = 1,
             color = Color.White,
-            fontSize = 10.sp
+            fontSize = Dimens.TextTiny
         )
     }
 }

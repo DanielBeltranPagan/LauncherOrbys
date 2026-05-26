@@ -23,6 +23,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.launcherorbys.receivers.PackageReceiver
+import com.example.launcherorbys.ui.theme.Dimens
 
 /**
  * Componente principal del Cajón de Aplicaciones.
@@ -64,22 +65,22 @@ fun AppDrawer(
 
     Box(
         modifier = modifier
-            .fillMaxWidth(0.4f)
-            .fillMaxHeight(0.65f)
-            .clip(RoundedCornerShape(24.dp))
+            .fillMaxWidth(Dimens.DrawerWidthPercent)
+            .fillMaxHeight(Dimens.DrawerHeightPercent)
+            .clip(RoundedCornerShape(Dimens.RadiusExtraLarge))
             .background(Color.Black.copy(alpha = 0.7f))
             .pointerInput(Unit) { 
                 detectTapGestures { viewModel.selectPackage(null) } 
             }
     ) {
-        Column(modifier = Modifier.padding(4.dp)) {
+        Column(modifier = Modifier.padding(Dimens.PaddingSmall)) {
             // Barra de búsqueda
             SearchBar(
                 query = searchQuery,
                 onQueryChange = { viewModel.onSearchQueryChange(it) }
             )
             
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(Dimens.PaddingMedium))
             
             // Rejilla de resultados
             ResultsGrid(
@@ -104,7 +105,7 @@ private fun SearchBar(
     TextField(
         value = query,
         onValueChange = onQueryChange,
-        modifier = Modifier.fillMaxWidth().padding(4.dp),
+        modifier = Modifier.fillMaxWidth().padding(Dimens.PaddingSmall),
         placeholder = { 
             Text(
                 "Buscar apps, archivos o ajustes...", 
@@ -116,7 +117,7 @@ private fun SearchBar(
             Icon(Icons.Default.Search, "Buscar", tint = Color.White.copy(alpha = 0.7f)) 
         },
         singleLine = true,
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(Dimens.RadiusLarge),
         textStyle = MaterialTheme.typography.bodyMedium.copy(color = Color.White),
         colors = TextFieldDefaults.colors(
             focusedContainerColor = Color.White.copy(alpha = 0.1f),
@@ -141,7 +142,7 @@ private fun ResultsGrid(
 ) {
     LazyVerticalGrid(
         columns = GridCells.Fixed(4),
-        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp),
+        contentPadding = PaddingValues(horizontal = Dimens.PaddingSmall, vertical = Dimens.PaddingTiny),
         verticalArrangement = Arrangement.spacedBy(12.dp),
         horizontalArrangement = Arrangement.spacedBy(0.dp)
     ) {
