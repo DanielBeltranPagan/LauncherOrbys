@@ -12,6 +12,49 @@ import android.widget.Toast
  */
 class AppLauncher(private val context: Context) {
 
+    private val prefs = context.getSharedPreferences("launcher_prefs", Context.MODE_PRIVATE)
+
+    /**
+     * Lanza una aplicación por su nombre de paquete y la registra como la última abierta.
+     */
+    fun lanzarApp(packageName: String) {
+        val intent = context.packageManager.getLaunchIntentForPackage(packageName)
+        if (intent != null) {
+            try {
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION)
+                context.startActivity(intent)
+                // Guardar como última app
+                prefs.edit().putString("last_opened_package", packageName).apply()
+            } catch (e: Exception) {
+                toast("No se pudo abrir la aplicación")
+            }
+        } else {
+            toast("Aplicación no encontrada")
+        }
+    }
+
+    /**
+     * Obtiene el nombre del paquete de la última aplicación abierta.
+     */
+    fun obtenerUltimaApp(): String? {
+        return prefs.getString("last_opened_package", null)
+    }
+
+    /**
+     * Obtiene la información básica de la última aplicación abierta.
+     */
+    fun obtenerInfoUltimaApp(): Pair<String, android.graphics.drawable.Drawable?>? {
+        val pkg = obtenerUltimaApp() ?: return null
+        return try {
+            val appInfo = context.packageManager.getApplicationInfo(pkg, 0)
+            val label = context.packageManager.getApplicationLabel(appInfo).toString()
+            val icon = context.packageManager.getApplicationIcon(pkg)
+            Pair(label, icon)
+        } catch (e: Exception) {
+            null
+        }
+    }
+
     /**
      * Abre un sitio web en el navegador del sistema.
      */
@@ -55,6 +98,7 @@ class AppLauncher(private val context: Context) {
     /**
      * Envía una señal interna para que MainActivity inicie el flujo de grabación de pantalla.
      */
+
     fun iniciarGrabacionEstandar() {
         val intent = Intent("com.example.launcherorbys.START_SCREEN_RECORD").apply {
             setPackage(context.packageName)
@@ -73,7 +117,7 @@ class AppLauncher(private val context: Context) {
             Intent("com.android.systemui.screenrecord.START")
         )
 
-        for (intent in intents) {
+        for (intent in intents) { 
             try {
                 context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                 return true

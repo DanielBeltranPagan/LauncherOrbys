@@ -12,12 +12,12 @@ import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.*
 import androidx.compose.runtime.State
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.launcherorbys.data.model.AppInfo
 import com.example.launcherorbys.data.repository.AppRepository
-import kotlinx.coroutines.Dispatchers
+import java.text.Normalizer
+import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -29,8 +29,8 @@ import kotlinx.coroutines.withContext
  */
 class AppDrawerViewModel(application: Application) : AndroidViewModel(application) {
 
-    private val context = application.applicationContext
-    private val repository = AppRepository(context)
+    private val repository = AppRepository(application)
+    private val context get() = getApplication<Application>()
 
     private val _searchQuery = mutableStateOf("")
     val searchQuery: State<String> = _searchQuery
@@ -42,14 +42,24 @@ class AppDrawerViewModel(application: Application) : AndroidViewModel(applicatio
     val selectedPackage: State<String?> = _selectedPackage
 
     private var allApps: List<AppInfo> = emptyList()
+    private var searchJob: Job? = null
 
     init {
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             repository.apps.collect { apps ->
                 allApps = apps
-                performSearch(_searchQuery.value)
+                withContext(Dispatchers.Main) {
+                    performSearch(_searchQuery.value)
+                }
             }
         }
+    }
+
+    private fun String.normalize(): String {
+        return Normalizer.normalize(this, Normalizer.Form.NFD)
+            .replace("\\p{InCombiningDiacriticalMarks}+".toRegex(), "")
+            .lowercase()
+            .trim()
     }
 
     fun onSearchQueryChange(query: String) {
@@ -57,8 +67,20 @@ class AppDrawerViewModel(application: Application) : AndroidViewModel(applicatio
         performSearch(query)
     }
 
+    private var selectionJob: Job? = null
+
     fun selectPackage(packageName: String?) {
+        selectionJob?.cancel()
         _selectedPackage.value = packageName
+        
+        if (packageName != null) {
+            selectionJob = viewModelScope.launch {
+                delay(5000)
+                if (_selectedPackage.value == packageName) {
+                    _selectedPackage.value = null
+                }
+            }
+        }
     }
 
     fun refreshApps() {
@@ -66,142 +88,102 @@ class AppDrawerViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     private fun performSearch(query: String) {
-        viewModelScope.launch {
+        searchJob?.cancel()
+        searchJob = viewModelScope.launch {
             if (query.isEmpty()) {
-                _searchResults.value = allApps.map { SearchResult.App(it) }
+                val appsToShow = allApps.filter { it.packageName != context.packageName }
+                _searchResults.value = appsToShow.map { SearchResult.App(it) }
                 return@launch
             }
 
-            withContext(Dispatchers.IO) {
-                val lowercaseQuery = query.lowercase().trim()
-                val results = mutableListOf<SearchResult>()
+            // Pequeño debounce para no saturar con cada letra
+            delay(150)
 
-                // 1. Filtrar Apps (Prioridad 1)
-                val filteredApps = allApps.filter { it.label.lowercase().contains(lowercaseQuery) }
-                results.addAll(filteredApps.map { SearchResult.App(it) })
+            val normalizedQuery = query.normalize()
+            
+            // 1. Apps y Contactos (Local - Rápido)
+            val filteredApps = withContext(Dispatchers.IO) {
+                allApps.filter { 
+                    it.packageName != context.packageName && 
+                    it.label.normalize().contains(normalizedQuery) 
+                }.sortedBy { it.label }
+            }
+            val contacts = withContext(Dispatchers.IO) { searchContacts(query) }
+            
+            val localResults = mutableListOf<SearchResult>()
+            localResults.addAll(filteredApps.map { SearchResult.App(it) })
+            localResults.addAll(contacts.map { SearchResult.Contact(it) })
+            localResults.add(SearchResult.SettingsSearch(query))
+            localResults.add(SearchResult.GoogleSearch(query))
+            
+            // Mostramos resultados locales primero
+            _searchResults.value = localResults
 
-                // 2. Buscar en Sistema (Ajustes)
-                val systemActions = getSystemActions().filter { action ->
-                    action.label.lowercase().contains(lowercaseQuery) ||
-                            action.keywords.any { it.contains(lowercaseQuery) }
-                }
-                results.addAll(systemActions.map { SearchResult.System(it) })
-
-                // 3. Motores de búsqueda específicos si la query es suficientemente larga
-                if (lowercaseQuery.length >= 2) {
-                    results.addAll(searchLocalFiles(lowercaseQuery).map { SearchResult.File(it) })
-                    results.addAll(searchContacts(lowercaseQuery).map { SearchResult.Contact(it) })
-                    results.addAll(searchMessages(lowercaseQuery).map { SearchResult.Message(it) })
-                }
-
-                // 4. Fallback: Búsqueda Web
-                results.add(SearchResult.Web(lowercaseQuery))
-
-                _searchResults.value = results
+            // 2. Sugerencias de Autocompletado (Red - Lento)
+            val suggestions = getAutocompleteSuggestions(query)
+            if (suggestions.isNotEmpty()) {
+                val allResults = mutableListOf<SearchResult>()
+                allResults.addAll(localResults)
+                allResults.addAll(suggestions.map { SearchResult.Suggestion(it) })
+                _searchResults.value = allResults
             }
         }
     }
 
-    private fun getSystemActions() = listOf(
-        SystemAction("Ajustes", Icons.Default.Settings, Intent(Settings.ACTION_SETTINGS), listOf("configuración", "opciones")),
-        SystemAction("Wi-Fi", Icons.Default.Wifi, Intent(Settings.ACTION_WIFI_SETTINGS), listOf("internet", "red", "conexión")),
-        SystemAction("Bluetooth", Icons.Default.Bluetooth, Intent(Settings.ACTION_BLUETOOTH_SETTINGS), listOf("inalámbrico", "dispositivos")),
-        SystemAction("Pantalla", Icons.Default.Tune, Intent(Settings.ACTION_DISPLAY_SETTINGS), listOf("brillo", "fondo", "tema", "fuente", "luz")),
-        SystemAction("Sonido", Icons.AutoMirrored.Filled.VolumeUp, Intent(Settings.ACTION_SOUND_SETTINGS), listOf("volumen", "tono", "vibración", "audio")),
-        SystemAction("Batería", Icons.Default.BatteryFull, Intent(Settings.ACTION_BATTERY_SAVER_SETTINGS), listOf("energía", "carga", "ahorro")),
-        SystemAction("Archivos", Icons.Default.Folder, Intent(Intent.ACTION_GET_CONTENT).apply { type = "*/*" }, listOf("documentos", "descargas", "explorador"))
-    )
-
-    private suspend fun searchLocalFiles(query: String): List<LocalFile> {
-        val results = mutableListOf<LocalFile>()
-        val projection = arrayOf(MediaStore.MediaColumns._ID, MediaStore.MediaColumns.DISPLAY_NAME, MediaStore.MediaColumns.MIME_TYPE)
-        val selection = "${MediaStore.MediaColumns.DISPLAY_NAME} LIKE ?"
-        val selectionArgs = arrayOf("%$query%")
-
-        val uris = listOf(
-            MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-            MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
-            MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
-            MediaStore.Files.getContentUri("external")
-        )
-
-        for (uri in uris) {
-            try {
-                context.contentResolver.query(uri, projection, selection, selectionArgs, "${MediaStore.MediaColumns.DATE_MODIFIED} DESC")?.use { cursor ->
-                    val idCol = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns._ID)
-                    val nameCol = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DISPLAY_NAME)
-                    val mimeCol = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.MIME_TYPE)
-
-                    var count = 0
-                    while (cursor.moveToNext() && count < 5) {
-                        val id = cursor.getLong(idCol)
-                        results.add(LocalFile(
-                            name = cursor.getString(nameCol),
-                            uri = ContentUris.withAppendedId(uri, id),
-                            mimeType = cursor.getString(mimeCol)
-                        ))
-                        count++
-                    }
-                }
-            } catch (_: Exception) {}
-            if (results.size > 15) break
+    private suspend fun getAutocompleteSuggestions(query: String): List<String> = withContext(Dispatchers.IO) {
+        try {
+            // Usamos el cliente "chrome" o "firefox" para obtener JSON simple
+            val url = "https://suggestqueries.google.com/complete/search?client=firefox&q=${Uri.encode(query)}"
+            val connection = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+            connection.setRequestProperty("User-Agent", "Mozilla/5.0")
+            
+            val response = connection.inputStream.bufferedReader().readText()
+            // El formato de Firefox es: ["query", ["sug1", "sug2", ...]]
+            // Usamos una limpieza manual simple para evitar dependencias de JSON pesadas
+            val jsonArrayString = response.substringAfter(",[").substringBeforeLast("]")
+            if (jsonArrayString.isEmpty()) return@withContext emptyList()
+            
+            jsonArrayString.split(",")
+                .map { it.trim().removeSurrounding("\"") }
+                .filter { it.isNotEmpty() && !it.equals(query, ignoreCase = true) }
+                .take(4)
+        } catch (_: Exception) {
+            emptyList()
         }
-        return results
     }
 
     private suspend fun searchContacts(query: String): List<LocalContact> {
+        // Comprobar permiso de forma silenciosa
+        if (androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.READ_CONTACTS) 
+            != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            return emptyList()
+        }
+
         val results = mutableListOf<LocalContact>()
-        val uri = ContactsContract.CommonDataKinds.Phone.CONTENT_URI
+        val uri = ContactsContract.Contacts.CONTENT_URI
         val projection = arrayOf(
-            ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
-            ContactsContract.CommonDataKinds.Phone.NUMBER,
-            ContactsContract.CommonDataKinds.Phone.CONTACT_ID
+            ContactsContract.Contacts.DISPLAY_NAME_PRIMARY,
+            ContactsContract.Contacts._ID
         )
-        val selection = "${ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME} LIKE ?"
+        val selection = "${ContactsContract.Contacts.DISPLAY_NAME_PRIMARY} LIKE ?"
         val selectionArgs = arrayOf("%$query%")
 
         try {
             context.contentResolver.query(uri, projection, selection, selectionArgs, null)?.use { cursor ->
-                val nameCol = cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME)
-                val numCol = cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER)
-                val idCol = cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.CONTACT_ID)
-
+                val nameCol = cursor.getColumnIndex(ContactsContract.Contacts.DISPLAY_NAME_PRIMARY)
+                val idCol = cursor.getColumnIndex(ContactsContract.Contacts._ID)
+                
                 var count = 0
-                while (cursor.moveToNext() && count < 5) {
-                    val id = cursor.getLong(idCol)
-                    results.add(LocalContact(
-                        name = cursor.getString(nameCol),
-                        phone = cursor.getString(numCol),
-                        uri = Uri.withAppendedPath(ContactsContract.Contacts.CONTENT_URI, id.toString())
-                    ))
-                    count++
-                }
-            }
-        } catch (_: Exception) {}
-        return results
-    }
-
-    private suspend fun searchMessages(query: String): List<LocalMessage> {
-        val results = mutableListOf<LocalMessage>()
-        val uri = Uri.parse("content://sms/inbox")
-        val projection = arrayOf("address", "body", "_id")
-        val selection = "body LIKE ?"
-        val selectionArgs = arrayOf("%$query%")
-
-        try {
-            context.contentResolver.query(uri, projection, selection, selectionArgs, "date DESC")?.use { cursor ->
-                val addrCol = cursor.getColumnIndex("address")
-                val bodyCol = cursor.getColumnIndex("body")
-                val idCol = cursor.getColumnIndex("_id")
-
-                var count = 0
-                while (cursor.moveToNext() && count < 5) {
-                    val id = cursor.getLong(idCol)
-                    results.add(LocalMessage(
-                        sender = cursor.getString(addrCol) ?: "Desconocido",
-                        snippet = cursor.getString(bodyCol) ?: "",
-                        uri = Uri.parse("content://sms/$id")
-                    ))
+                while (cursor.moveToNext() && count < 10) {
+                    if (nameCol != -1 && idCol != -1) {
+                        val name = cursor.getString(nameCol) ?: "Sin nombre"
+                        val id = cursor.getLong(idCol)
+                        results.add(LocalContact(
+                            name = name,
+                            phone = "",
+                            uri = Uri.withAppendedPath(ContactsContract.Contacts.CONTENT_URI, id.toString())
+                        ))
+                    }
                     count++
                 }
             }

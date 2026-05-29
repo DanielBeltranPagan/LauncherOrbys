@@ -144,6 +144,7 @@ class MainActivity : ComponentActivity() {
     @Composable
     private fun UIPermissionGuard() {
         val allGranted = viewModel.isDefaultLauncher && viewModel.isAccessibilityEnabled && viewModel.canWriteSettings
+        
         if (!allGranted) {
             val permissionsList = remember(viewModel.isDefaultLauncher, viewModel.canWriteSettings, viewModel.isAccessibilityEnabled) {
                 listOf(

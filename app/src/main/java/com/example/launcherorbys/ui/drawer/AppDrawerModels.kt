@@ -12,10 +12,12 @@ import com.example.launcherorbys.data.model.AppInfo
 sealed class SearchResult {
     data class App(val appInfo: AppInfo) : SearchResult()
     data class System(val action: SystemAction) : SearchResult()
-    data class File(val file: LocalFile) : SearchResult()
     data class Contact(val contact: LocalContact) : SearchResult()
-    data class Message(val message: LocalMessage) : SearchResult()
-    data class Web(val query: String) : SearchResult()
+    data class Suggestion(val text: String) : SearchResult()
+    data class GoogleSearch(val query: String) : SearchResult()
+    data class SettingsSearch(val query: String) : SearchResult()
+    data class PlayStoreSearch(val query: String) : SearchResult()
+    data class YouTubeSearch(val query: String) : SearchResult()
 }
 
 data class LocalFile(val name: String, val uri: Uri, val mimeType: String?)

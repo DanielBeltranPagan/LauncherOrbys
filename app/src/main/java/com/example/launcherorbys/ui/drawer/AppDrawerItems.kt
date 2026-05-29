@@ -30,6 +30,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.graphics.drawable.toBitmap
 import com.example.launcherorbys.data.model.AppInfo
+import com.example.launcherorbys.managers.AppLauncher
 import com.example.launcherorbys.ui.theme.Dimens
 
 /**
@@ -51,12 +52,19 @@ fun SectionHeader(text: String) {
 fun AppItem(
     app: AppInfo,
     isSelected: Boolean,
+    isRowSelected: Boolean,
     onSelect: () -> Unit,
     onDismiss: () -> Unit,
-    onAppLaunched: () -> Unit
+    onAppLaunched: () -> Unit,
+    appLauncher: AppLauncher
 ) {
-    val context = LocalContext.current
-    
+    // Animación para el hueco superior (empuja la fila entera hacia abajo para que quepan los botones)
+    val extraTopPadding by animateDpAsState(
+        targetValue = if (isRowSelected) 42.dp else 0.dp,
+        animationSpec = spring(stiffness = Spring.StiffnessLow),
+        label = "extraPadding"
+    )
+
     val infiniteTransition = rememberInfiniteTransition(label = "shake")
     val rotation by infiniteTransition.animateFloat(
         initialValue = -2f,
@@ -68,61 +76,65 @@ fun AppItem(
         label = "rotation"
     )
 
-    Box(
-        modifier = Modifier.fillMaxWidth(),
-        contentAlignment = Alignment.Center
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = extraTopPadding),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Column(
-            modifier = Modifier
-                .wrapContentSize()
-                .graphicsLayer {
-                    if (isSelected) {
-                        rotationZ = rotation
-                        scaleX = 1.1f
-                        scaleY = 1.1f
-                    }
-                }
-                .clip(RoundedCornerShape(Dimens.RadiusMedium))
-                .pointerInput(Unit) {
-                    detectTapGestures(
-                        onTap = {
-                            if (isSelected) {
-                                onDismiss()
-                            } else {
-                                context.packageManager.getLaunchIntentForPackage(app.packageName)?.let { intent ->
-                                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION)
-                                    context.startActivity(intent)
-                                }
-                                onAppLaunched()
-                            }
-                        },
-                        onLongPress = {
-                            onSelect()
+        Box(
+            modifier = Modifier.wrapContentSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(
+                modifier = Modifier
+                    .wrapContentSize()
+                    .graphicsLayer {
+                        if (isSelected) {
+                            rotationZ = rotation
+                            scaleX = 1.1f
+                            scaleY = 1.1f
                         }
+                    }
+                    .clip(RoundedCornerShape(Dimens.RadiusMedium))
+                    .pointerInput(Unit) {
+                        detectTapGestures(
+                            onTap = {
+                                if (isSelected) {
+                                    onDismiss()
+                                } else {
+                                    appLauncher.lanzarApp(app.packageName)
+                                    onAppLaunched()
+                                }
+                            },
+                            onLongPress = {
+                                onSelect()
+                            }
+                        )
+                    }
+                    .padding(Dimens.PaddingSmall),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                app.icon?.let {
+                    Image(
+                        bitmap = it.toBitmap().asImageBitmap(), 
+                        contentDescription = null, 
+                        modifier = Modifier.size(Dimens.AppIconSize)
                     )
                 }
-                .padding(Dimens.PaddingSmall),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            app.icon?.let {
-                Image(
-                    bitmap = it.toBitmap().asImageBitmap(), 
-                    contentDescription = null, 
-                    modifier = Modifier.size(Dimens.AppIconSize)
+                Spacer(modifier = Modifier.height(Dimens.PaddingSmall))
+                Text(
+                    text = app.label, 
+                    style = MaterialTheme.typography.labelSmall, 
+                    maxLines = 1, 
+                    color = if (isSelected) Color.White.copy(alpha = 0.6f) else Color.White,
+                    fontSize = Dimens.TextSmall
                 )
             }
-            Spacer(modifier = Modifier.height(Dimens.PaddingSmall))
-            Text(
-                text = app.label, 
-                style = MaterialTheme.typography.labelSmall, 
-                maxLines = 1, 
-                color = if (isSelected) Color.White.copy(alpha = 0.6f) else Color.White,
-                fontSize = Dimens.TextSmall
-            )
-        }
 
-        if (isSelected) {
-            AppActionButtons(app = app, onDismiss = onDismiss, onAppLaunched = onAppLaunched)
+            if (isSelected) {
+                AppActionButtons(app = app, onDismiss = onDismiss, onAppLaunched = onAppLaunched)
+            }
         }
     }
 }
@@ -134,12 +146,12 @@ private fun BoxScope.AppActionButtons(
     onAppLaunched: () -> Unit
 ) {
     val context = LocalContext.current
-    Column(
+    Row(
         modifier = Modifier
-            .align(Alignment.CenterEnd)
-            .offset(x = Dimens.PaddingSmall, y = (-12).dp)
+            .align(Alignment.TopCenter)
+            .offset(y = (-38).dp) // Ajustado para que flote en el hueco creado
             .wrapContentSize(),
-        verticalArrangement = Arrangement.spacedBy(6.dp)
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         // Botón INFO
         ActionButton(icon = Icons.Default.Info, color = Color.Black.copy(alpha = 0.8f)) {
@@ -258,6 +270,185 @@ fun WebSearchItem(query: String, onClicked: () -> Unit) {
         ),
         onClicked = onClicked
     )
+}
+
+@Composable
+fun SuggestionItem(
+    text: String, 
+    onSearch: (String) -> Unit,
+    onAutocomplete: (String) -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(Dimens.RadiusMedium))
+            .clickable { onSearch(text) }
+            .padding(vertical = 4.dp, horizontal = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            Icons.Default.Search, 
+            contentDescription = null, 
+            tint = Color.White.copy(alpha = 0.4f),
+            modifier = Modifier.size(18.dp)
+        )
+        Spacer(modifier = Modifier.width(16.dp))
+        Text(
+            text = text,
+            style = MaterialTheme.typography.bodyLarge,
+            color = Color.White.copy(alpha = 0.9f),
+            modifier = Modifier.weight(1f),
+            maxLines = 1
+        )
+        IconButton(
+            onClick = { onAutocomplete(text) },
+            modifier = Modifier.size(36.dp)
+        ) {
+            Icon(
+                Icons.Default.ArrowOutward, 
+                contentDescription = "Completar", 
+                tint = Color.White.copy(alpha = 0.3f),
+                modifier = Modifier.size(18.dp)
+            )
+        }
+    }
+}
+
+@Composable
+fun GoogleSearchItem(query: String, onClicked: () -> Unit) {
+    val context = LocalContext.current
+    LongSearchItem(
+        label = "Buscar \"$query\" en Google",
+        icon = Icons.Default.Public,
+        onClick = {
+            try {
+                val intent = Intent(Intent.ACTION_WEB_SEARCH).apply {
+                    putExtra("query", query)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(intent)
+                onClicked()
+            } catch (_: Exception) {}
+        }
+    )
+}
+
+@Composable
+fun SettingsSearchItem(query: String, onClicked: () -> Unit) {
+    val context = LocalContext.current
+    LongSearchItem(
+        label = "Buscar \"$query\" en Ajustes",
+        icon = Icons.Default.Settings,
+        onClick = {
+            try {
+                val intent = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                    Intent(Settings.ACTION_SEARCH_SETTINGS).apply {
+                        putExtra(":settings:show_fragment_args", android.os.Bundle().apply {
+                            putString(":settings:fragment_args_key", query)
+                        })
+                        putExtra("query", query)
+                    }
+                } else {
+                    Intent(Settings.ACTION_SETTINGS)
+                }
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                context.startActivity(intent)
+            } catch (_: Exception) {
+                try {
+                    context.startActivity(Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                } catch (_: Exception) {}
+            }
+            onClicked()
+        }
+    )
+}
+
+@Composable
+fun PlayStoreSearchItem(query: String, onClicked: () -> Unit) {
+    val context = LocalContext.current
+    LongSearchItem(
+        label = "Buscar \"$query\" en Play Store",
+        icon = Icons.Default.Shop,
+        onClick = {
+            try {
+                val intent = Intent(Intent.ACTION_VIEW).apply {
+                    data = Uri.parse("market://search?q=$query")
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(intent)
+                onClicked()
+            } catch (_: Exception) {
+                try {
+                    val intent = Intent(Intent.ACTION_VIEW).apply {
+                        data = Uri.parse("https://play.google.com/store/search?q=$query")
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    context.startActivity(intent)
+                } catch (_: Exception) {}
+            }
+            onClicked()
+        }
+    )
+}
+
+@Composable
+fun YouTubeSearchItem(query: String, onClicked: () -> Unit) {
+    val context = LocalContext.current
+    LongSearchItem(
+        label = "Buscar \"$query\" en YouTube",
+        icon = Icons.Default.PlayCircle,
+        onClick = {
+            try {
+                val intent = Intent(Intent.ACTION_SEARCH).apply {
+                    setPackage("com.google.android.youtube")
+                    putExtra("query", query)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(intent)
+            } catch (_: Exception) {
+                try {
+                    val intent = Intent(Intent.ACTION_VIEW).apply {
+                        data = Uri.parse("https://www.youtube.com/results?search_query=$query")
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    context.startActivity(intent)
+                } catch (_: Exception) {}
+            }
+            onClicked()
+        }
+    )
+}
+
+@Composable
+private fun LongSearchItem(
+    label: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(Dimens.RadiusMedium))
+            .clickable { onClick() }
+            .padding(vertical = 12.dp, horizontal = 16.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(32.dp)
+                .background(Color.White.copy(alpha = 0.1f), CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(icon, null, tint = Color.White, modifier = Modifier.size(18.dp))
+        }
+        Spacer(modifier = Modifier.width(16.dp))
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyMedium,
+            color = Color.White,
+            maxLines = 1
+        )
+    }
 }
 
 @Composable

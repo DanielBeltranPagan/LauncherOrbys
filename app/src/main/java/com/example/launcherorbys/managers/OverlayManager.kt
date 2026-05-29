@@ -357,13 +357,50 @@ class OverlayManager(
     }
 
     private fun openWallpaperPicker() {
-        try {
-            service.startActivity(Intent(Intent.ACTION_SET_WALLPAPER).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-        } catch (_: Exception) {
+        val intents = mutableListOf<Intent>()
+        
+        // 1. Wallpaper & Style (Google / Pixel / Android 12+)
+        intents.add(Intent("com.google.android.apps.wallpaper.VIEW_WALLPAPER_COLLECTION"))
+        intents.add(Intent().setClassName("com.google.android.apps.wallpaper", "com.google.android.apps.wallpaper.WallpaperPickerActivity"))
+        intents.add(Intent().setClassName("com.google.android.apps.wallpaper", "com.google.android.apps.wallpaper.PickerActivity"))
+
+        // 2. Samsung (One UI)
+        intents.add(Intent().setClassName("com.samsung.android.app.wallpaper", "com.samsung.android.app.wallpaper.WallpaperStyleActivity"))
+        intents.add(Intent().setClassName("com.samsung.android.app.wallpaper", "com.samsung.android.app.wallpaper.KeyguardWallpaperActivity"))
+
+        // 3. Xiaomi (MIUI)
+        intents.add(Intent().setClassName("com.android.thememanager", "com.android.thememanager.WallpaperSettingsActivity"))
+        
+        // 4. Otros (Oppo, Motorola, Huawei)
+        intents.add(Intent("com.oplus.wallpaper.PICKER"))
+        intents.add(Intent().setClassName("com.motorola.personalize", "com.motorola.personalize.app.PersonalizeActivity"))
+        intents.add(Intent().setClassName("com.huawei.android.totemweather", "com.huawei.android.totemweather.WallpaperPickerActivity"))
+
+        // 5. Ajustes de Android estándar
+        intents.add(Intent("android.settings.WALLPAPER_SETTINGS"))
+        intents.add(Intent().setClassName("com.android.settings", "com.android.settings.Settings\$WallpaperSettingsActivity"))
+        
+        // 6. Selector estándar (Chooser)
+        intents.add(Intent(Intent.ACTION_SET_WALLPAPER))
+
+        var started = false
+        for (intent in intents) {
             try {
-                service.startActivity(Intent(android.app.WallpaperManager.ACTION_CHANGE_LIVE_WALLPAPER).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-            } catch (_: Exception) { toast("Error en selector de fondo") }
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                service.startActivity(intent)
+                started = true
+                break
+            } catch (_: Exception) { }
         }
+
+        if (!started) {
+            try {
+                service.startActivity(Intent(Settings.ACTION_DISPLAY_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            } catch (_: Exception) {
+                toast("No se encontró el selector de fondo")
+            }
+        }
+
         if (systemOptionsVisible) toggleSystemOptions()
     }
 

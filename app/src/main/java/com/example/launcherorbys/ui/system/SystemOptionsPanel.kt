@@ -1,5 +1,7 @@
 package com.example.launcherorbys.ui.system
 
+import android.graphics.drawable.Drawable
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -13,9 +15,12 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.graphics.drawable.toBitmap
 
 /**
  * Panel visual que contiene los controles de brillo, volumen y accesos rápidos
@@ -142,19 +147,19 @@ fun SystemOptionsPanel(
                 ) {
                     // Fila 1: Conectividad y Fondo
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        QuickActionButton(Icons.Default.Wifi, "Wi-Fi", onWifiClick, isWifiOn)
-                        QuickActionButton(Icons.Default.Bluetooth, "Bluetooth", onBluetoothClick, isBluetoothOn)
-                        QuickActionButton(Icons.Default.Wallpaper, "Fondo", onWallpaperClick)
+                        QuickActionButton(icon = Icons.Default.Wifi, label = "Wi-Fi", onClick = onWifiClick, isActive = isWifiOn)
+                        QuickActionButton(icon = Icons.Default.Bluetooth, label = "Bluetooth", onClick = onBluetoothClick, isActive = isBluetoothOn)
+                        QuickActionButton(icon = Icons.Default.Wallpaper, label = "Fondo", onClick = onWallpaperClick)
                     }
                     // Fila 2: Ajustes y Capturas
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        QuickActionButton(Icons.Default.Settings, "Ajustes", onSettingsClick)
-                        QuickActionButton(Icons.Default.Screenshot, "Captura", onScreenshotClick)
-                        QuickActionButton(Icons.Default.Videocam, "Grabar", onRecordClick)
+                        QuickActionButton(icon = Icons.Default.Settings, label = "Ajustes", onClick = onSettingsClick)
+                        QuickActionButton(icon = Icons.Default.Screenshot, label = "Captura", onClick = onScreenshotClick)
+                        QuickActionButton(icon = Icons.Default.Videocam, label = "Grabar", onClick = onRecordClick)
                     }
                     // Fila 3: Sistema
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
-                        QuickActionButton(Icons.Default.PowerSettingsNew, "Apagar", onPowerClick)
+                        QuickActionButton(icon = Icons.Default.PowerSettingsNew, label = "Apagar", onClick = onPowerClick)
                     }
                 }
             }
@@ -164,7 +169,7 @@ fun SystemOptionsPanel(
 
 @Composable
 private fun SliderRow(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    icon: ImageVector,
     value: Float,
     onValueChange: (Float) -> Unit,
     enabled: Boolean = true,
@@ -209,9 +214,10 @@ private fun SliderRow(
  */
 @Composable
 fun QuickActionButton(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
     label: String,
     onClick: () -> Unit,
+    icon: ImageVector? = null,
+    drawable: Drawable? = null,
     isActive: Boolean = false
 ) {
     Column(
@@ -227,7 +233,15 @@ fun QuickActionButton(
             modifier = Modifier.size(56.dp)
         ) {
             Box(contentAlignment = Alignment.Center) {
-                Icon(icon, contentDescription = label, modifier = Modifier.size(26.dp))
+                if (drawable != null) {
+                    Image(
+                        bitmap = drawable.toBitmap().asImageBitmap(),
+                        contentDescription = label,
+                        modifier = Modifier.size(32.dp)
+                    )
+                } else if (icon != null) {
+                    Icon(icon, contentDescription = label, modifier = Modifier.size(26.dp))
+                }
             }
         }
         Spacer(modifier = Modifier.height(10.dp))

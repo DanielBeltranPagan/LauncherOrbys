@@ -9,11 +9,13 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -22,12 +24,13 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.launcherorbys.managers.AppLauncher
 import com.example.launcherorbys.receivers.PackageReceiver
 import com.example.launcherorbys.ui.theme.Dimens
+import kotlinx.coroutines.delay
 
 /**
  * Componente principal del Cajón de Aplicaciones.
- * Ahora utiliza [AppDrawerViewModel] para gestionar la lógica de búsqueda y estado.
  */
 @Composable
 fun AppDrawer(
@@ -35,15 +38,30 @@ fun AppDrawer(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val viewModel: AppDrawerViewModel = viewModel(
-        factory = remember {
-            ViewModelProvider.AndroidViewModelFactory.getInstance(context.applicationContext as android.app.Application)
-        }
-    )
+    
+    // Obtenemos el ViewModel usando la factoría por defecto si es posible
+    val viewModel: AppDrawerViewModel = viewModel()
 
     val searchQuery by viewModel.searchQuery
     val searchResults by viewModel.searchResults.collectAsState()
     val selectedPackage by viewModel.selectedPackage
+    val appLauncher = remember { AppLauncher(context) }
+
+    // Limpiar selección y búsqueda al cerrar/desaparecer el cajón
+    DisposableEffect(Unit) {
+        onDispose {
+            viewModel.selectPackage(null)
+            viewModel.onSearchQueryChange("")
+        }
+    }
+
+    // Auto-deselección tras 5 segundos
+    LaunchedEffect(selectedPackage) {
+        if (selectedPackage != null) {
+            delay(5000)
+            viewModel.selectPackage(null)
+        }
+    }
 
     // Escuchar cambios en las aplicaciones instaladas
     DisposableEffect(Unit) {
@@ -54,7 +72,11 @@ fun AppDrawer(
             addAction(Intent.ACTION_PACKAGE_CHANGED)
             addDataScheme("package")
         }
-        context.registerReceiver(receiver, filter)
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            context.registerReceiver(receiver, filter, android.content.Context.RECEIVER_EXPORTED)
+        } else {
+            context.registerReceiver(receiver, filter)
+        }
         onDispose {
             try {
                 context.unregisterReceiver(receiver)
@@ -88,7 +110,9 @@ fun AppDrawer(
                 searchQuery = searchQuery,
                 selectedPackage = selectedPackage,
                 onSelectPackage = { viewModel.selectPackage(it) },
-                onClose = onClose
+                onClose = onClose,
+                appLauncher = appLauncher,
+                onQueryChange = { viewModel.onSearchQueryChange(it) }
             )
         }
     }
@@ -138,33 +162,42 @@ private fun ResultsGrid(
     searchQuery: String,
     selectedPackage: String?,
     onSelectPackage: (String?) -> Unit,
-    onClose: () -> Unit
+    onClose: () -> Unit,
+    appLauncher: AppLauncher,
+    onQueryChange: (String) -> Unit
 ) {
+    val context = LocalContext.current
+    val suggestions = searchResults.filterIsInstance<SearchResult.Suggestion>()
+    val appsList = searchResults.filterIsInstance<SearchResult.App>()
+    val contactsList = searchResults.filterIsInstance<SearchResult.Contact>()
+    val googleSearch = searchResults.filterIsInstance<SearchResult.GoogleSearch>().firstOrNull()
+    val settingsSearch = searchResults.filterIsInstance<SearchResult.SettingsSearch>().firstOrNull()
+
+    // Calculamos qué fila está seleccionada para moverla entera (Simetría)
+    val selectedIndex = appsList.indexOfFirst { it.appInfo.packageName == selectedPackage }
+    val selectedRow = if (selectedIndex != -1) selectedIndex / 4 else -1
+
     LazyVerticalGrid(
         columns = GridCells.Fixed(4),
         contentPadding = PaddingValues(horizontal = Dimens.PaddingSmall, vertical = Dimens.PaddingTiny),
         verticalArrangement = Arrangement.spacedBy(12.dp),
         horizontalArrangement = Arrangement.spacedBy(0.dp)
     ) {
-        val appsList = searchResults.filterIsInstance<SearchResult.App>()
-        val contactsList = searchResults.filterIsInstance<SearchResult.Contact>()
-        val filesList = searchResults.filterIsInstance<SearchResult.File>()
-        val messagesList = searchResults.filterIsInstance<SearchResult.Message>()
-        val systemList = searchResults.filterIsInstance<SearchResult.System>()
-        val webList = searchResults.filterIsInstance<SearchResult.Web>()
-
-        // 1. Sección de Aplicaciones
+        // 1. Sección de Aplicaciones (Lo más importante arriba)
         if (appsList.isNotEmpty()) {
             if (searchQuery.isNotEmpty()) {
                 item(span = { GridItemSpan(maxLineSpan) }) { SectionHeader("APLICACIONES") }
             }
-            items(appsList) { result ->
+            itemsIndexed(appsList) { index, result ->
+                val row = index / 4
                 AppItem(
                     app = result.appInfo,
                     isSelected = selectedPackage == result.appInfo.packageName,
+                    isRowSelected = row == selectedRow,
                     onSelect = { onSelectPackage(result.appInfo.packageName) },
                     onDismiss = { onSelectPackage(null) },
-                    onAppLaunched = onClose
+                    onAppLaunched = onClose,
+                    appLauncher = appLauncher
                 )
             }
         }
@@ -177,33 +210,46 @@ private fun ResultsGrid(
             }
         }
 
-        // 3. Sección de Archivos
-        if (filesList.isNotEmpty()) {
-            item(span = { GridItemSpan(maxLineSpan) }) { SectionHeader("ARCHIVOS") }
-            items(filesList) { result ->
-                FileItem(file = result.file, onClicked = onClose)
-            }
-        }
-
-        // 4. Sección de Mensajes
-        if (messagesList.isNotEmpty()) {
-            item(span = { GridItemSpan(maxLineSpan) }) { SectionHeader("MENSAJES") }
-            items(messagesList) { result ->
-                MessageItem(message = result.message, onClicked = onClose)
-            }
-        }
-
-        // 5. Sección de Sistema y Web
-        if (systemList.isNotEmpty() || webList.isNotEmpty()) {
-            item(span = { GridItemSpan(maxLineSpan) }) { SectionHeader("SISTEMA Y WEB") }
+        // 3. Sección de Búsquedas Especiales y Autocompletado
+        if (searchQuery.isNotEmpty()) {
+            item(span = { GridItemSpan(maxLineSpan) }) { SectionHeader("BÚSQUEDAS") }
             
-            items(systemList) { result ->
-                SystemActionItem(action = result.action, onClicked = onClose)
+            // 3.1. Buscar en Ajustes (Local)
+            if (settingsSearch != null) {
+                item(span = { GridItemSpan(maxLineSpan) }) { 
+                    SettingsSearchItem(query = settingsSearch.query, onClicked = onClose) 
+                }
+            }
+
+            // 3.2. Buscar en Google (Web)
+            if (googleSearch != null) {
+                item(span = { GridItemSpan(maxLineSpan) }) { 
+                    GoogleSearchItem(query = googleSearch.query, onClicked = onClose) 
+                }
+            }
+
+            // 3.3. Sugerencias de Autocompletado de Google (Debajo del todo)
+            if (suggestions.isNotEmpty()) {
+                item(span = { GridItemSpan(maxLineSpan) }) { SectionHeader("SUGERENCIAS") }
+                items(suggestions, span = { GridItemSpan(maxLineSpan) }) { sug ->
+                    SuggestionItem(
+                        text = sug.text, 
+                        onSearch = { query ->
+                            try {
+                                val intent = Intent(Intent.ACTION_WEB_SEARCH).apply {
+                                    putExtra("query", query)
+                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                }
+                                context.startActivity(intent)
+                                onClose()
+                            } catch (_: Exception) {}
+                        },
+                        onAutocomplete = { onQueryChange(it) }
+                    )
+                }
             }
             
-            items(webList) { result ->
-                WebSearchItem(query = result.query, onClicked = onClose)
-            }
+            item(span = { GridItemSpan(maxLineSpan) }) { Spacer(modifier = Modifier.height(16.dp)) }
         }
     }
 }
