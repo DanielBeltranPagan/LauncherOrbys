@@ -340,25 +340,54 @@ fun SettingsSearchItem(query: String, onClicked: () -> Unit) {
         label = "Buscar \"$query\" en Ajustes",
         icon = Icons.Default.Settings,
         onClick = {
+            onClicked()
+            
+            // 1. Intent base de búsqueda de ajustes
+            val intent = Intent(Settings.ACTION_SEARCH_SETTINGS)
+            
+            // 2. Inyectamos la query en todos los formatos conocidos por diferentes fabricantes
+            val extras = android.os.Bundle().apply {
+                putString("query", query)
+                putString("android.intent.extra.QUERY", query)
+                putString("com.android.settings.search.extra.SEARCH_QUERY", query)
+                // Extras para capas específicas (Samsung/MIUI/Pixel)
+                putString("x_search_query", query)
+                putString("search_query", query)
+            }
+            intent.putExtras(extras)
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+
+            // 3. Intent alternativo específico para "Intelligence Search" (Android 10+)
+            val intelligenceIntent = Intent("com.google.android.settings.intelligence.SETTINGS_SEARCH").apply {
+                setPackage("com.google.android.settings.intelligence")
+                putExtra("android.intent.extra.QUERY", query)
+                putExtra("query", query)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+
             try {
-                val intent = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                    Intent(Settings.ACTION_SEARCH_SETTINGS).apply {
-                        putExtra(":settings:show_fragment_args", android.os.Bundle().apply {
-                            putString(":settings:fragment_args_key", query)
-                        })
-                        putExtra("query", query)
-                    }
-                } else {
-                    Intent(Settings.ACTION_SETTINGS)
-                }
-                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                context.startActivity(intent)
+                // Prioridad 1: Intent de Inteligencia (el más probable en tablets modernas)
+                context.startActivity(intelligenceIntent)
             } catch (_: Exception) {
                 try {
-                    context.startActivity(Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-                } catch (_: Exception) {}
+                    // Prioridad 2: Intent estándar con todos los extras inyectados
+                    context.startActivity(intent)
+                } catch (_: Exception) {
+                    // Prioridad 3: Intent genérico de búsqueda dirigido al paquete de ajustes
+                    try {
+                        val fallbackSearch = Intent(Intent.ACTION_SEARCH).apply {
+                            setPackage("com.android.settings")
+                            putExtra("query", query)
+                            putExtra("android.intent.extra.QUERY", query)
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        }
+                        context.startActivity(fallbackSearch)
+                    } catch (_: Exception) {
+                        // Último recurso: Abrir ajustes normales
+                        context.startActivity(Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                    }
+                }
             }
-            onClicked()
         }
     )
 }

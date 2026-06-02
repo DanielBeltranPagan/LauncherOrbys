@@ -245,6 +245,7 @@ class MainActivity : ComponentActivity() {
 
     private fun hideStatusBar() {
         val controller = WindowCompat.getInsetsController(window, window.decorView)
+        // Usamos BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE para que el sistema ignore deslizamientos simples
         controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         controller.hide(WindowInsetsCompat.Type.systemBars())
     }

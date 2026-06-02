@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.systemGestureExclusion
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
@@ -46,6 +47,7 @@ fun SideNavBar(
             )
             .width(width)
             .heightIn(min = if (isExpanded) 160.dp else 40.dp)
+            .systemGestureExclusion()
             .onSizeChanged { onHeightChanged(it.height) }
             .pointerInput(Unit) {
                 detectDragGestures { change, dragAmount ->

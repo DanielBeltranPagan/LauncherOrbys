@@ -51,13 +51,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     /**
      * Lógica de verificación automática para el retorno desde pantallas de ajustes.
+     * Detecta un cambio en el estado del permiso antes de regresar a la app.
      */
     fun startAutoCheck(check: () -> Boolean, onComplete: () -> Unit) {
+        val initialValue = check()
         viewModelScope.launch {
             delay(500)
             var attempts = 0
-            while (isActive && attempts < 30) {
-                if (check()) {
+            while (isActive && attempts < 40) {
+                val currentValue = check()
+                if (currentValue != initialValue) {
                     updatePermissionStates()
                     delay(200)
                     onComplete()

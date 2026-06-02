@@ -5,6 +5,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.systemGestureExclusion
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
@@ -69,7 +70,8 @@ fun NavBar(
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(height),
+            .height(height)
+            .systemGestureExclusion(),
         contentAlignment = if (isAtTop) Alignment.TopCenter else Alignment.BottomCenter
     ) {
         // Fondo principal

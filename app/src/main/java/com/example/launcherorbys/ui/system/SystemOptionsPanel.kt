@@ -1,10 +1,11 @@
 package com.example.launcherorbys.ui.system
 
 import android.graphics.drawable.Drawable
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.VolumeOff
@@ -17,13 +18,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.graphics.drawable.toBitmap
 
 /**
- * Panel visual que contiene los controles de brillo, volumen y accesos rápidos
+ * Panel visual ultra-compacto y minimalista.
  */
 @Composable
 fun SystemOptionsPanel(
@@ -37,7 +37,7 @@ fun SystemOptionsPanel(
     onRecordClick: () -> Unit,
     isWifiOn: Boolean,
     isBluetoothOn: Boolean,
-    isMuted: Boolean,
+    @Suppress("UNUSED_PARAMETER") isMuted: Boolean,
     currentBrightness: Float,
     onBrightnessChange: (Float) -> Unit,
     isAutoBrightness: Boolean,
@@ -48,119 +48,65 @@ fun SystemOptionsPanel(
 ) {
     val themeColor = MaterialTheme.colorScheme.primary
 
-    // Tarjeta principal del panel
-    Card(
+    Surface(
         modifier = modifier
-            .width(320.dp)
-            .padding(16.dp),
+            .width(220.dp)
+            .padding(8.dp),
         shape = RoundedCornerShape(32.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = Color.Transparent
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+        color = Color(0xFF0A0A0A).copy(alpha = 0.9f),
+        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.15f)),
+        tonalElevation = 12.dp
     ) {
-        Box(
-            modifier = Modifier
-                .background(
-                    color = Color.Black.copy(alpha = 0.7f),
-                    shape = RoundedCornerShape(32.dp)
-                )
-                .padding(24.dp)
+        Column(
+            modifier = Modifier.padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            // --- SLIDERS MINIMALISTAS ---
             Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(20.dp)
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(2.dp)
             ) {
-                Text(
-                    "Panel de Control",
-                    color = Color.White,
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    letterSpacing = 1.sp
+                // Brillo
+                CompactSliderRow(
+                    icon = if (isAutoBrightness) Icons.Default.BrightnessAuto else Icons.Default.BrightnessLow,
+                    value = currentBrightness,
+                    onValueChange = onBrightnessChange,
+                    enabled = !isAutoBrightness,
+                    color = if (isAutoBrightness) themeColor else Color.White,
+                    onIconClick = { onAutoBrightnessChange(!isAutoBrightness) }
                 )
+                
+                // Volumen
+                CompactSliderRow(
+                    icon = if (currentVolume == 0f) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp,
+                    value = currentVolume,
+                    onValueChange = onVolumeChange,
+                    color = if (currentVolume == 0f) themeColor else Color.White,
+                    onIconClick = onMuteClick
+                )
+            }
 
-                // --- SECCIÓN DE CONTROLES DESLIZANTES ---
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    // Control de Brillo
-                    SliderRow(
-                        icon = if (isAutoBrightness) Icons.Default.BrightnessAuto else Icons.Default.BrightnessMedium,
-                        value = currentBrightness,
-                        onValueChange = onBrightnessChange,
-                        enabled = !isAutoBrightness,
-                        trailingContent = {
-                            Box(
-                                contentAlignment = Alignment.Center,
-                                modifier = Modifier
-                                    .size(36.dp)
-                                    .clickable { onAutoBrightnessChange(!isAutoBrightness) }
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.BrightnessAuto,
-                                    contentDescription = "Auto Brillo",
-                                    tint = if (isAutoBrightness) themeColor else Color.White,
-                                    modifier = Modifier.size(24.dp)
-                                )
-                                if (!isAutoBrightness) {
-                                    // Dibujamos una línea diagonal roja para indicar "Desactivado"
-                                    androidx.compose.foundation.Canvas(modifier = Modifier.size(20.dp)) {
-                                        drawLine(
-                                            color = Color.Red,
-                                            start = androidx.compose.ui.geometry.Offset(0f, 0f),
-                                            end = androidx.compose.ui.geometry.Offset(size.width, size.height),
-                                            strokeWidth = 3f
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    )
-                    
-                    // Control de Volumen
-                    SliderRow(
-                        icon = if (isMuted || currentVolume == 0f) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp,
-                        value = if (isMuted) 0f else currentVolume,
-                        onValueChange = onVolumeChange,
-                        iconTint = if (isMuted) themeColor else Color.White,
-                        trailingContent = {
-                            IconButton(
-                                onClick = { onMuteClick() },
-                                modifier = Modifier.size(36.dp)
-                            ) {
-                                Icon(
-                                    imageVector = if (isMuted) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp,
-                                    contentDescription = "Mute",
-                                    tint = if (isMuted) themeColor else Color.White,
-                                    modifier = Modifier.size(24.dp)
-                                )
-                            }
-                        }
-                    )
+            HorizontalDivider(color = Color.White.copy(alpha = 0.1f), thickness = 1.dp)
+
+            // --- GRID DE ACCIONES (Iconos únicamente para máxima limpieza) ---
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                    MiniIconButton(icon = Icons.Default.Wifi, isActive = isWifiOn, onClick = onWifiClick)
+                    MiniIconButton(icon = Icons.Default.Bluetooth, isActive = isBluetoothOn, onClick = onBluetoothClick)
+                    MiniIconButton(icon = Icons.Default.Wallpaper, onClick = onWallpaperClick)
                 }
-
-                // --- SECCIÓN DE ACCESOS RÁPIDOS (GRILLA 3xN) ---
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(24.dp)
-                ) {
-                    // Fila 1: Conectividad y Fondo
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        QuickActionButton(icon = Icons.Default.Wifi, label = "Wi-Fi", onClick = onWifiClick, isActive = isWifiOn)
-                        QuickActionButton(icon = Icons.Default.Bluetooth, label = "Bluetooth", onClick = onBluetoothClick, isActive = isBluetoothOn)
-                        QuickActionButton(icon = Icons.Default.Wallpaper, label = "Fondo", onClick = onWallpaperClick)
-                    }
-                    // Fila 2: Ajustes y Capturas
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        QuickActionButton(icon = Icons.Default.Settings, label = "Ajustes", onClick = onSettingsClick)
-                        QuickActionButton(icon = Icons.Default.Screenshot, label = "Captura", onClick = onScreenshotClick)
-                        QuickActionButton(icon = Icons.Default.Videocam, label = "Grabar", onClick = onRecordClick)
-                    }
-                    // Fila 3: Sistema
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
-                        QuickActionButton(icon = Icons.Default.PowerSettingsNew, label = "Apagar", onClick = onPowerClick)
-                    }
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                    MiniIconButton(icon = Icons.Default.Settings, onClick = onSettingsClick)
+                    MiniIconButton(icon = Icons.Default.Screenshot, onClick = onScreenshotClick)
+                    MiniIconButton(icon = Icons.Default.Videocam, onClick = onRecordClick)
+                }
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
+                    MiniIconButton(icon = Icons.Default.PowerSettingsNew, isDanger = true, onClick = onPowerClick)
                 }
             }
         }
@@ -168,89 +114,64 @@ fun SystemOptionsPanel(
 }
 
 @Composable
-private fun SliderRow(
+private fun CompactSliderRow(
     icon: ImageVector,
     value: Float,
     onValueChange: (Float) -> Unit,
     enabled: Boolean = true,
-    iconClick: (() -> Unit)? = null,
-    iconTint: Color = Color.White,
-    trailingContent: @Composable (() -> Unit)? = null
+    color: Color = Color.White,
+    onIconClick: () -> Unit
 ) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier.fillMaxWidth().height(32.dp)
     ) {
-        IconButton(
-            onClick = { iconClick?.invoke() },
-            enabled = iconClick != null,
-            modifier = Modifier.size(24.dp)
-        ) {
-            Icon(icon, contentDescription = null, tint = iconTint, modifier = Modifier.size(22.dp))
-        }
-        
+        Icon(
+            icon, 
+            contentDescription = null, 
+            tint = color.copy(alpha = 0.7f), 
+            modifier = Modifier
+                .size(18.dp)
+                .clickable { onIconClick() }
+        )
         Slider(
             value = value,
             onValueChange = onValueChange,
             enabled = enabled,
-            modifier = Modifier
-                .weight(1f)
-                .padding(horizontal = 12.dp),
+            modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
             colors = SliderDefaults.colors(
                 thumbColor = Color.White,
                 activeTrackColor = MaterialTheme.colorScheme.primary,
-                inactiveTrackColor = Color.White.copy(alpha = 0.2f),
-                disabledThumbColor = Color.Gray,
-                disabledActiveTrackColor = Color.DarkGray
+                inactiveTrackColor = Color.White.copy(alpha = 0.1f)
             )
         )
-        
-        trailingContent?.invoke()
     }
 }
 
-/**
- * Componente reutilizable para los botones circulares del panel
- */
 @Composable
-fun QuickActionButton(
-    label: String,
-    onClick: () -> Unit,
-    icon: ImageVector? = null,
-    drawable: Drawable? = null,
-    isActive: Boolean = false
+private fun MiniIconButton(
+    icon: ImageVector,
+    isActive: Boolean = false,
+    isDanger: Boolean = false,
+    onClick: () -> Unit
 ) {
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-        modifier = Modifier.width(70.dp)
+    Surface(
+        onClick = onClick,
+        shape = CircleShape,
+        color = when {
+            isActive -> MaterialTheme.colorScheme.primary
+            isDanger -> Color(0xFFEF5350).copy(alpha = 0.2f)
+            else -> Color.White.copy(alpha = 0.08f)
+        },
+        contentColor = when {
+            isActive -> MaterialTheme.colorScheme.onPrimary
+            isDanger -> Color(0xFFEF5350)
+            else -> Color.White.copy(alpha = 0.8f)
+        },
+        modifier = Modifier.size(42.dp)
     ) {
-        Surface(
-            onClick = onClick,
-            shape = RoundedCornerShape(20.dp),
-            color = if (isActive) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.1f),
-            contentColor = if (isActive) MaterialTheme.colorScheme.onPrimary else Color.White,
-            modifier = Modifier.size(56.dp)
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                if (drawable != null) {
-                    Image(
-                        bitmap = drawable.toBitmap().asImageBitmap(),
-                        contentDescription = label,
-                        modifier = Modifier.size(32.dp)
-                    )
-                } else if (icon != null) {
-                    Icon(icon, contentDescription = label, modifier = Modifier.size(26.dp))
-                }
-            }
+        Box(contentAlignment = Alignment.Center) {
+            Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp))
         }
-        Spacer(modifier = Modifier.height(10.dp))
-        Text(
-            label, 
-            color = Color.White.copy(alpha = 0.8f), 
-            fontSize = 10.sp,
-            fontWeight = FontWeight.Medium,
-            maxLines = 1
-        )
     }
 }
