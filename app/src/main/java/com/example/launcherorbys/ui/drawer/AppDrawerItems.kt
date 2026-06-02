@@ -28,10 +28,12 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import androidx.core.graphics.drawable.toBitmap
 import com.example.launcherorbys.data.model.AppInfo
 import com.example.launcherorbys.managers.AppLauncher
 import com.example.launcherorbys.ui.theme.Dimens
+import com.example.launcherorbys.utils.Constants
 
 /**
  * Encabezado de sección para el LazyVerticalGrid.
@@ -117,16 +119,16 @@ fun AppItem(
             ) {
                 app.icon?.let {
                     Image(
-                        bitmap = it.toBitmap().asImageBitmap(), 
-                        contentDescription = null, 
+                        bitmap = it.toBitmap().asImageBitmap(),
+                        contentDescription = null,
                         modifier = Modifier.size(Dimens.AppIconSize)
                     )
                 }
                 Spacer(modifier = Modifier.height(Dimens.PaddingSmall))
                 Text(
-                    text = app.label, 
-                    style = MaterialTheme.typography.labelSmall, 
-                    maxLines = 1, 
+                    text = app.label,
+                    style = MaterialTheme.typography.labelSmall,
+                    maxLines = 1,
                     color = if (isSelected) Color.White.copy(alpha = 0.6f) else Color.White,
                     fontSize = Dimens.TextSmall
                 )
@@ -193,7 +195,7 @@ private fun ActionButton(
 @Composable
 fun FileItem(file: LocalFile, onClicked: () -> Unit) {
     val context = LocalContext.current
-    
+
     ItemContainer(
         label = file.name,
         icon = if (file.mimeType?.contains("image") == true) Icons.Default.Image else Icons.Default.Description,
@@ -274,7 +276,7 @@ fun WebSearchItem(query: String, onClicked: () -> Unit) {
 
 @Composable
 fun SuggestionItem(
-    text: String, 
+    text: String,
     onSearch: (String) -> Unit,
     onAutocomplete: (String) -> Unit
 ) {
@@ -287,8 +289,8 @@ fun SuggestionItem(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(
-            Icons.Default.Search, 
-            contentDescription = null, 
+            Icons.Default.Search,
+            contentDescription = null,
             tint = Color.White.copy(alpha = 0.4f),
             modifier = Modifier.size(18.dp)
         )
@@ -305,8 +307,8 @@ fun SuggestionItem(
             modifier = Modifier.size(36.dp)
         ) {
             Icon(
-                Icons.Default.ArrowOutward, 
-                contentDescription = "Completar", 
+                Icons.Default.ArrowOutward,
+                contentDescription = "Completar",
                 tint = Color.White.copy(alpha = 0.3f),
                 modifier = Modifier.size(18.dp)
             )
@@ -341,52 +343,22 @@ fun SettingsSearchItem(query: String, onClicked: () -> Unit) {
         icon = Icons.Default.Settings,
         onClick = {
             onClicked()
-            
-            // 1. Intent base de búsqueda de ajustes
-            val intent = Intent(Settings.ACTION_SEARCH_SETTINGS)
-            
-            // 2. Inyectamos la query en todos los formatos conocidos por diferentes fabricantes
-            val extras = android.os.Bundle().apply {
-                putString("query", query)
-                putString("android.intent.extra.QUERY", query)
-                putString("com.android.settings.search.extra.SEARCH_QUERY", query)
-                // Extras para capas específicas (Samsung/MIUI/Pixel)
-                putString("x_search_query", query)
-                putString("search_query", query)
-            }
-            intent.putExtras(extras)
-            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
 
-            // 3. Intent alternativo específico para "Intelligence Search" (Android 10+)
-            val intelligenceIntent = Intent("com.google.android.settings.intelligence.SETTINGS_SEARCH").apply {
-                setPackage("com.google.android.settings.intelligence")
-                putExtra("android.intent.extra.QUERY", query)
+            // Enviar broadcast al AccessibilityService para realizar la búsqueda
+            val intent = Intent(Constants.ACTION_SETTINGS_SEARCH).apply {
                 putExtra("query", query)
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                setPackage(context.packageName)
             }
+            context.sendBroadcast(intent)
 
+            // Abrir Settings normalmente
             try {
-                // Prioridad 1: Intent de Inteligencia (el más probable en tablets modernas)
-                context.startActivity(intelligenceIntent)
-            } catch (_: Exception) {
-                try {
-                    // Prioridad 2: Intent estándar con todos los extras inyectados
-                    context.startActivity(intent)
-                } catch (_: Exception) {
-                    // Prioridad 3: Intent genérico de búsqueda dirigido al paquete de ajustes
-                    try {
-                        val fallbackSearch = Intent(Intent.ACTION_SEARCH).apply {
-                            setPackage("com.android.settings")
-                            putExtra("query", query)
-                            putExtra("android.intent.extra.QUERY", query)
-                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        }
-                        context.startActivity(fallbackSearch)
-                    } catch (_: Exception) {
-                        // Último recurso: Abrir ajustes normales
-                        context.startActivity(Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-                    }
+                val settingsIntent = Intent(Settings.ACTION_SETTINGS).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
+                context.startActivity(settingsIntent)
+            } catch (e: Exception) {
+                e.printStackTrace()
             }
         }
     )

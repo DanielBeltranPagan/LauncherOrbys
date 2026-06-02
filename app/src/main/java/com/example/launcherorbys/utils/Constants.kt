@@ -13,6 +13,7 @@ object Constants {
     const val ACTION_RECORDING_STOPPED = "com.example.launcherorbys.RECORDING_STOPPED"
     const val ACTION_START_SCREEN_RECORD = "com.example.launcherorbys.START_SCREEN_RECORD"
     const val ACTION_REQUEST_BLUETOOTH = "com.example.launcherorbys.REQUEST_BLUETOOTH"
+    const val ACTION_SETTINGS_SEARCH = "com.example.launcherorbys.SETTINGS_SEARCH"
 
     // --- Claves de Preferencias ---
     const val PREFS_NAME = "launcher_prefs"

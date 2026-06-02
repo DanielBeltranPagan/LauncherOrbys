@@ -249,14 +249,16 @@ class OverlayManager(
             ) {
                 SystemOptionsPanel(
                     onSettingsClick = { openSettings(Settings.ACTION_SETTINGS) },
-                    onWifiClick = { openSettings(Settings.ACTION_WIFI_SETTINGS) },
+                    onWifiClick = { 
+                        appLauncher.abrirUrl("https://www.google.com")
+                        toggleSystemOptions() 
+                    },
                     onBluetoothClick = { handleBluetoothAction() },
                     onWallpaperClick = { openWallpaperPicker() },
                     onMuteClick = { systemManager.toggleMute() },
                     onPowerClick = { service.performGlobalAction(GLOBAL_ACTION_POWER_DIALOG); toggleSystemOptions() },
                     onScreenshotClick = { takeScreenshot() },
                     onRecordClick = { handleRecordAction() },
-                    isWifiOn = systemManager.isWifiOn,
                     isBluetoothOn = systemManager.isBluetoothOn,
                     isMuted = systemManager.isMuted,
                     currentBrightness = systemManager.currentBrightness,

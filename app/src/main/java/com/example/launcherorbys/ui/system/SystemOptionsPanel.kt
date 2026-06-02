@@ -1,8 +1,7 @@
 package com.example.launcherorbys.ui.system
 
-import android.graphics.drawable.Drawable
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -15,12 +14,10 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import androidx.core.graphics.drawable.toBitmap
 
 /**
  * Panel visual ultra-compacto y minimalista.
@@ -35,9 +32,8 @@ fun SystemOptionsPanel(
     onPowerClick: () -> Unit,
     onScreenshotClick: () -> Unit,
     onRecordClick: () -> Unit,
-    isWifiOn: Boolean,
     isBluetoothOn: Boolean,
-    @Suppress("UNUSED_PARAMETER") isMuted: Boolean,
+    isMuted: Boolean,
     currentBrightness: Float,
     onBrightnessChange: (Float) -> Unit,
     isAutoBrightness: Boolean,
@@ -62,41 +58,41 @@ fun SystemOptionsPanel(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // --- SLIDERS MINIMALISTAS ---
+            // --- SLIDERS ---
             Column(
                 modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(2.dp)
+                verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 // Brillo
                 CompactSliderRow(
-                    icon = if (isAutoBrightness) Icons.Default.BrightnessAuto else Icons.Default.BrightnessLow,
+                    icon = if (isAutoBrightness) Icons.Default.BrightnessAuto else if (currentBrightness > 0.5f) Icons.Default.BrightnessHigh else Icons.Default.BrightnessLow,
                     value = currentBrightness,
                     onValueChange = onBrightnessChange,
                     enabled = !isAutoBrightness,
-                    color = if (isAutoBrightness) themeColor else Color.White,
+                    iconColor = if (isAutoBrightness) themeColor else Color.White.copy(alpha = 0.8f),
                     onIconClick = { onAutoBrightnessChange(!isAutoBrightness) }
                 )
                 
-                // Volumen
+                // Volumen con Mute integrado
                 CompactSliderRow(
-                    icon = if (currentVolume == 0f) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp,
-                    value = currentVolume,
+                    icon = if (isMuted || currentVolume == 0f) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp,
+                    value = if (isMuted) 0f else currentVolume,
                     onValueChange = onVolumeChange,
-                    color = if (currentVolume == 0f) themeColor else Color.White,
+                    iconColor = if (isMuted) Color(0xFFEF5350) else Color.White.copy(alpha = 0.8f),
                     onIconClick = onMuteClick
                 )
             }
 
             HorizontalDivider(color = Color.White.copy(alpha = 0.1f), thickness = 1.dp)
 
-            // --- GRID DE ACCIONES (Iconos únicamente para máxima limpieza) ---
+            // --- GRID DE ACCIONES ---
             Column(
                 modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                    MiniIconButton(icon = Icons.Default.Wifi, isActive = isWifiOn, onClick = onWifiClick)
+                    MiniIconButton(icon = Icons.Default.Language, onClick = onWifiClick)
                     MiniIconButton(icon = Icons.Default.Bluetooth, isActive = isBluetoothOn, onClick = onBluetoothClick)
                     MiniIconButton(icon = Icons.Default.Wallpaper, onClick = onWallpaperClick)
                 }
@@ -113,15 +109,19 @@ fun SystemOptionsPanel(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun CompactSliderRow(
     icon: ImageVector,
     value: Float,
     onValueChange: (Float) -> Unit,
     enabled: Boolean = true,
-    color: Color = Color.White,
+    iconColor: Color = Color.White.copy(alpha = 0.8f),
     onIconClick: () -> Unit
 ) {
+    val trackColor = if (enabled) Color.White else Color.White.copy(alpha = 0.3f)
+    val inactiveTrackColor = Color.White.copy(alpha = 0.1f)
+
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier.fillMaxWidth().height(32.dp)
@@ -129,21 +129,49 @@ private fun CompactSliderRow(
         Icon(
             icon, 
             contentDescription = null, 
-            tint = color.copy(alpha = 0.7f), 
+            tint = iconColor, 
             modifier = Modifier
                 .size(18.dp)
                 .clickable { onIconClick() }
         )
+        
         Slider(
             value = value,
             onValueChange = onValueChange,
             enabled = enabled,
-            modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
+            modifier = Modifier.weight(1f).padding(start = 8.dp),
             colors = SliderDefaults.colors(
-                thumbColor = Color.White,
-                activeTrackColor = MaterialTheme.colorScheme.primary,
-                inactiveTrackColor = Color.White.copy(alpha = 0.1f)
-            )
+                thumbColor = if (enabled) Color.White else Color.Transparent,
+                activeTrackColor = trackColor,
+                inactiveTrackColor = inactiveTrackColor,
+                disabledActiveTrackColor = trackColor,
+                disabledInactiveTrackColor = inactiveTrackColor,
+                disabledThumbColor = Color.Transparent
+            ),
+            track = { sliderState ->
+                SliderDefaults.Track(
+                    sliderState = sliderState,
+                    enabled = enabled,
+                    colors = SliderDefaults.colors(
+                        activeTrackColor = trackColor,
+                        inactiveTrackColor = inactiveTrackColor,
+                        disabledActiveTrackColor = trackColor,
+                        disabledInactiveTrackColor = inactiveTrackColor
+                    ),
+                    modifier = Modifier.height(6.dp).clip(CircleShape),
+                    thumbTrackGapSize = 0.dp
+                )
+            },
+            thumb = {
+                if (enabled) {
+                    Box(
+                        modifier = Modifier
+                            .size(14.dp)
+                            .clip(CircleShape)
+                            .background(Color.White)
+                    )
+                }
+            }
         )
     }
 }
