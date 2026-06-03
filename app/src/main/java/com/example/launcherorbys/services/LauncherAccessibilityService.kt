@@ -66,9 +66,9 @@ class LauncherAccessibilityService : AccessibilityService(), LifecycleOwner, Sav
                     val esClaro = intent.getBooleanExtra("esClaro", true)
                     overlayManager.actualizarColores(esClaro)
                 }
-                android.bluetooth.BluetoothAdapter.ACTION_STATE_CHANGED -> {
-                    val state = intent.getIntExtra(android.bluetooth.BluetoothAdapter.EXTRA_STATE, -1)
-                    systemManager.isBluetoothOn = (state == android.bluetooth.BluetoothAdapter.STATE_ON)
+                android.bluetooth.BluetoothAdapter.ACTION_STATE_CHANGED,
+                android.net.wifi.WifiManager.WIFI_STATE_CHANGED_ACTION -> {
+                    systemManager.actualizarValoresSistema()
                 }
                 android.net.ConnectivityManager.CONNECTIVITY_ACTION -> {
                     systemManager.actualizarValoresSistema()
@@ -138,6 +138,7 @@ class LauncherAccessibilityService : AccessibilityService(), LifecycleOwner, Sav
         val filter = IntentFilter().apply {
             addAction(Constants.ACTION_THEME_CHANGED)
             addAction(android.bluetooth.BluetoothAdapter.ACTION_STATE_CHANGED)
+            addAction(android.net.wifi.WifiManager.WIFI_STATE_CHANGED_ACTION)
             @Suppress("DEPRECATION")
             addAction(android.net.ConnectivityManager.CONNECTIVITY_ACTION)
             addAction(Constants.ACTION_RECORDING_STARTED)

@@ -14,8 +14,10 @@ import android.provider.Settings
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bluetooth
 import androidx.compose.material.icons.filled.BluetoothConnected
+import androidx.compose.material.icons.filled.BluetoothDisabled
 import androidx.compose.runtime.*
 import androidx.core.content.ContextCompat
+import com.example.launcherorbys.managers.SystemControlManager
 import kotlinx.coroutines.delay
 
 /**
@@ -27,6 +29,7 @@ fun BluetoothSection(
     context: Context,
     onRequestPermission: () -> Unit
 ) {
+    val systemManager = remember { SystemControlManager(context) }
     val bluetoothAdapter = remember { 
         try {
             val manager = context.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
@@ -47,7 +50,9 @@ fun BluetoothSection(
 
             try {
                 if (hasPermission) {
+                    @Suppress("MissingPermission")
                     isBluetoothEnabled = bluetoothAdapter.isEnabled
+                    @Suppress("MissingPermission")
                     isConnected = bluetoothAdapter.getProfileConnectionState(BluetoothProfile.GATT) == BluetoothProfile.STATE_CONNECTED ||
                                   bluetoothAdapter.getProfileConnectionState(BluetoothProfile.A2DP) == BluetoothProfile.STATE_CONNECTED
                 } else {
@@ -55,7 +60,9 @@ fun BluetoothSection(
                     isConnected = false
                 }
             } catch (e: Exception) {
+                // Si hay un error al acceder a las propiedades (ej. permisos), asumimos desactivado
                 isBluetoothEnabled = false
+                isConnected = false
             }
         }
     }
@@ -80,23 +87,16 @@ fun BluetoothSection(
     }
 
     StatusIcon(
-        imageVector = if (hasPermission && isConnected) Icons.Default.BluetoothConnected else Icons.Default.Bluetooth,
+        imageVector = if (isConnected) Icons.Default.BluetoothConnected else Icons.Default.Bluetooth,
         contentDescription = "Bluetooth",
-        isVisible = bluetoothAdapter != null && (isBluetoothEnabled || !hasPermission),
+        isVisible = bluetoothAdapter != null && isBluetoothEnabled && hasPermission,
         onClick = {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !hasPermission) {
+                // Pedir permiso si falta
                 onRequestPermission()
-            } else {
-                try {
-                    context.startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS).apply {
-                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    })
-                } catch (e: Exception) {
-                    context.startActivity(Intent(Settings.ACTION_SETTINGS).apply {
-                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    })
-                }
             }
+            // SIEMPRE abrir ajustes de Bluetooth
+            systemManager.abrirAjustesBT()
         }
     )
 }

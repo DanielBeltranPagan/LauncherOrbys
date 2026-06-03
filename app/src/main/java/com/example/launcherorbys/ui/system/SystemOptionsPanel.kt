@@ -32,6 +32,7 @@ fun SystemOptionsPanel(
     onPowerClick: () -> Unit,
     onScreenshotClick: () -> Unit,
     onRecordClick: () -> Unit,
+    isWifiOn: Boolean,
     isBluetoothOn: Boolean,
     isMuted: Boolean,
     currentBrightness: Float,
@@ -92,7 +93,7 @@ fun SystemOptionsPanel(
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                    MiniIconButton(icon = Icons.Default.Language, onClick = onWifiClick)
+                    MiniIconButton(icon = Icons.Default.Wifi, isActive = isWifiOn, onClick = onWifiClick)
                     MiniIconButton(icon = Icons.Default.Bluetooth, isActive = isBluetoothOn, onClick = onBluetoothClick)
                     MiniIconButton(icon = Icons.Default.Wallpaper, onClick = onWallpaperClick)
                 }
@@ -187,19 +188,20 @@ private fun MiniIconButton(
         onClick = onClick,
         shape = CircleShape,
         color = when {
-            isActive -> MaterialTheme.colorScheme.primary
+            isActive -> Color(0xFF2196F3) // Azul vibrante
             isDanger -> Color(0xFFEF5350).copy(alpha = 0.2f)
-            else -> Color.White.copy(alpha = 0.08f)
+            else -> Color.White.copy(alpha = 0.12f)
         },
-        contentColor = when {
-            isActive -> MaterialTheme.colorScheme.onPrimary
-            isDanger -> Color(0xFFEF5350)
-            else -> Color.White.copy(alpha = 0.8f)
-        },
+        contentColor = Color.White,
         modifier = Modifier.size(42.dp)
     ) {
         Box(contentAlignment = Alignment.Center) {
-            Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp))
+            Icon(
+                icon, 
+                contentDescription = null, 
+                modifier = Modifier.size(20.dp),
+                tint = if (isActive) Color.White else Color.White.copy(alpha = 0.7f)
+            )
         }
     }
 }

@@ -1,14 +1,15 @@
 package com.example.launcherorbys.ui.status
 
 import android.content.Context
-import android.content.Intent
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.provider.Settings
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Wifi
+import androidx.compose.material.icons.filled.WifiOff
 import androidx.compose.runtime.*
+import com.example.launcherorbys.managers.SystemControlManager
 
 /**
  * Gestiona el estado y la visualización del icono de WiFi en la barra de estado.
@@ -57,12 +58,10 @@ fun WifiSection(context: Context) {
     StatusIcon(
         imageVector = Icons.Default.Wifi,
         contentDescription = "WiFi",
-        isVisible = isWifiEnabled,
+        isVisible = isWifiEnabled, // Solo visible si hay conexión activa
         onClick = {
-            // Abrir ajustes de WiFi
-            context.startActivity(Intent(Settings.ACTION_WIFI_SETTINGS).apply {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            })
+            val systemManager = SystemControlManager(context)
+            systemManager.abrirAjustesWifi()
         }
     )
 }

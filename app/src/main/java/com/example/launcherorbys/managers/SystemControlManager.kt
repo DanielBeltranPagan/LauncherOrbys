@@ -63,19 +63,66 @@ class SystemControlManager(private val context: Context) {
 
     private fun actualizarConectividad() {
         isAirplaneModeOn = Settings.Global.getInt(contentResolver, Settings.Global.AIRPLANE_MODE_ON, 0) != 0
+        
+        // WiFi
         try {
-            val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-            val caps = cm.getNetworkCapabilities(cm.activeNetwork)
-            isWifiOn = caps?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
-            
-            val bm = context.getSystemService(Context.BLUETOOTH_SERVICE) as android.bluetooth.BluetoothManager
-            isBluetoothOn = bm.adapter?.isEnabled == true
-        } catch (e: Exception) {}
+            val wm = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as? android.net.wifi.WifiManager
+            isWifiOn = wm?.isWifiEnabled == true
+        } catch (e: Exception) {
+            isWifiOn = false
+        }
+        
+        // Bluetooth - Manejo seguro de permisos
+        try {
+            val bm = context.getSystemService(Context.BLUETOOTH_SERVICE) as? android.bluetooth.BluetoothManager
+            val adapter = bm?.adapter
+            if (adapter != null) {
+                val hasPermission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    context.checkSelfPermission(android.Manifest.permission.BLUETOOTH_CONNECT) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                } else true
+                
+                isBluetoothOn = if (hasPermission) {
+                    adapter.isEnabled
+                } else {
+                    // Si no hay permiso, no podemos saberlo con certeza, devolvemos false para evitar crash
+                    false
+                }
+            } else {
+                isBluetoothOn = false
+            }
+        } catch (e: Exception) {
+            isBluetoothOn = false
+        }
     }
 
     /**
-     * Cambia el nivel de brillo de la pantalla (0.0 a 1.0).
+     * Intenta alternar el estado del Bluetooth.
+     * En Android 13+ el toggle directo suele estar restringido, por lo que abrirá ajustes si falla.
      */
+    fun toggleBluetooth() {
+        val bm = context.getSystemService(Context.BLUETOOTH_SERVICE) as? android.bluetooth.BluetoothManager
+        val adapter = bm?.adapter ?: return
+
+        val hasPermission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            context.checkSelfPermission(android.Manifest.permission.BLUETOOTH_CONNECT) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        } else true
+
+        if (!hasPermission) return // OverlayManager detectará esto y pedirá permiso
+
+        try {
+            @Suppress("DEPRECATION")
+            if (adapter.isEnabled) {
+                adapter.disable()
+            } else {
+                adapter.enable()
+            }
+            // Actualizar estado local inmediatamente
+            isBluetoothOn = adapter.isEnabled
+        } catch (e: Exception) {
+            // Si falla el toggle directo (restricciones de Android moderno), abrimos ajustes
+            abrirAjustesBT()
+        }
+    }
 
     fun cambiarBrillo(valor: Float) {
         if (Settings.System.canWrite(context)) {
@@ -138,9 +185,40 @@ class SystemControlManager(private val context: Context) {
 
     fun abrirAjustesBT() {
         try {
-            context.startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            val intent = Intent(Settings.ACTION_BLUETOOTH_SETTINGS).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            }
+            context.startActivity(intent)
         } catch (e: Exception) {
-            abrirAjustesFallback()
+            try {
+                // Fallback 1: Pantalla de dispositivos conectados / conectividad
+                val intent = Intent("android.settings.CONNECT_SETTINGS").apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(intent)
+            } catch (e2: Exception) {
+                abrirAjustesFallback()
+            }
+        }
+    }
+
+    fun abrirAjustesWifi() {
+        try {
+            val intent = Intent(Settings.ACTION_WIFI_SETTINGS).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            }
+            context.startActivity(intent)
+        } catch (e: Exception) {
+            try {
+                val intent = Intent(Settings.ACTION_WIRELESS_SETTINGS).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(intent)
+            } catch (e2: Exception) {
+                abrirAjustesFallback()
+            }
         }
     }
 

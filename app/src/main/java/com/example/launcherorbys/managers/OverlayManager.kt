@@ -12,7 +12,9 @@ import android.view.WindowManager
 import android.widget.Toast
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -36,6 +38,7 @@ import com.example.launcherorbys.ui.navigation.SideNavBar
 import com.example.launcherorbys.ui.recording.RecordingTimer
 import com.example.launcherorbys.ui.recording.StopRecordingDialog
 import com.example.launcherorbys.ui.system.SystemOptionsPanel
+import com.example.launcherorbys.ui.theme.Dimens
 import com.example.launcherorbys.ui.theme.LauncherOrbysTheme
 import com.example.launcherorbys.utils.Constants
 
@@ -245,32 +248,41 @@ class OverlayManager(
         vistaSystemOptions = createComposeView {
             Box(
                 modifier = Modifier.fillMaxSize().clickable(null, null) { toggleSystemOptions() },
-                contentAlignment = if (navBarAtTop) Alignment.TopCenter else Alignment.BottomCenter
+                contentAlignment = Alignment.TopCenter
             ) {
-                SystemOptionsPanel(
-                    onSettingsClick = { openSettings(Settings.ACTION_SETTINGS) },
-                    onWifiClick = { 
-                        appLauncher.abrirUrl("https://www.google.com")
-                        toggleSystemOptions() 
-                    },
-                    onBluetoothClick = { handleBluetoothAction() },
-                    onWallpaperClick = { openWallpaperPicker() },
-                    onMuteClick = { systemManager.toggleMute() },
-                    onPowerClick = { service.performGlobalAction(GLOBAL_ACTION_POWER_DIALOG); toggleSystemOptions() },
-                    onScreenshotClick = { takeScreenshot() },
-                    onRecordClick = { handleRecordAction() },
-                    isBluetoothOn = systemManager.isBluetoothOn,
-                    isMuted = systemManager.isMuted,
-                    currentBrightness = systemManager.currentBrightness,
-                    onBrightnessChange = { systemManager.cambiarBrillo(it) },
-                    isAutoBrightness = systemManager.isAutoBrightness,
-                    onAutoBrightnessChange = { systemManager.cambiarModoBrillo(it) },
-                    currentVolume = systemManager.currentVolume,
-                    onVolumeChange = { systemManager.cambiarVolumen(it) },
+                // Alineamos el panel para que su parte inferior coincida con la del AppDrawer (que está centrado y mide 65%)
+                val drawerBottomHeight = 0.5f + (Dimens.DrawerHeightPercent / 2f)
+                
+                Box(
                     modifier = Modifier
-                        .padding(top = if (navBarAtTop) 50.dp else 0.dp, bottom = if (navBarAtTop) 0.dp else 60.dp)
-                        .clickable(null, null) { }
-                )
+                        .fillMaxWidth()
+                        .fillMaxHeight(drawerBottomHeight),
+                    contentAlignment = Alignment.BottomCenter
+                ) {
+                    SystemOptionsPanel(
+                        onSettingsClick = { openSettings(Settings.ACTION_SETTINGS) },
+                        onWifiClick = { 
+                            systemManager.abrirAjustesWifi()
+                            vistaSystemOptions.postDelayed({ toggleSystemOptions() }, 200)
+                        },
+                        onBluetoothClick = { handleBluetoothAction() },
+                        onWallpaperClick = { openWallpaperPicker() },
+                        onMuteClick = { systemManager.toggleMute() },
+                        onPowerClick = { service.performGlobalAction(GLOBAL_ACTION_POWER_DIALOG); toggleSystemOptions() },
+                        onScreenshotClick = { takeScreenshot() },
+                        onRecordClick = { handleRecordAction() },
+                        isWifiOn = systemManager.isWifiOn,
+                        isBluetoothOn = systemManager.isBluetoothOn,
+                        isMuted = systemManager.isMuted,
+                        currentBrightness = systemManager.currentBrightness,
+                        onBrightnessChange = { systemManager.cambiarBrillo(it) },
+                        isAutoBrightness = systemManager.isAutoBrightness,
+                        onAutoBrightnessChange = { systemManager.cambiarModoBrillo(it) },
+                        currentVolume = systemManager.currentVolume,
+                        onVolumeChange = { systemManager.cambiarVolumen(it) },
+                        modifier = Modifier.clickable(null, null) { }
+                    )
+                }
             }
         }
     }
@@ -338,13 +350,21 @@ class OverlayManager(
     // --- Helpers Internos ---
 
     private fun handleBluetoothAction() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && 
-            service.checkSelfPermission(android.Manifest.permission.BLUETOOTH_CONNECT) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+        val hasPermission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            service.checkSelfPermission(android.Manifest.permission.BLUETOOTH_CONNECT) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        } else true
+
+        if (!hasPermission) {
+            // Si falta el permiso, lanzamos la petición (trae la actividad al frente)
+            launchHomeIntent()
             service.sendBroadcast(Intent(Constants.ACTION_REQUEST_BLUETOOTH).setPackage(service.packageName))
-        } else {
-            systemManager.abrirAjustesBT()
-        }
-        toggleSystemOptions()
+        } 
+        
+        // SIEMPRE abrir ajustes de Bluetooth como has pedido
+        systemManager.abrirAjustesBT()
+        
+        // Cerramos el panel de opciones para que el usuario vea la pantalla de ajustes
+        if (systemOptionsVisible) toggleSystemOptions()
     }
 
     private fun takeScreenshot() {
