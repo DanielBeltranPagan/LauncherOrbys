@@ -4,16 +4,15 @@ import android.content.Context
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
-import android.provider.Settings
+import android.net.NetworkRequest
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Wifi
-import androidx.compose.material.icons.filled.WifiOff
 import androidx.compose.runtime.*
 import com.example.launcherorbys.managers.SystemControlManager
 
 /**
  * Gestiona el estado y la visualización del icono de WiFi en la barra de estado.
- * Escucha cambios de red en tiempo real.
+ * El icono solo es visible si hay una conexión WiFi activa y funcional.
  */
 @Composable
 fun WifiSection(context: Context) {
@@ -21,44 +20,55 @@ fun WifiSection(context: Context) {
         context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager 
     }
     
-    val checkWifi = {
-        val caps = connectivityManager.getNetworkCapabilities(connectivityManager.activeNetwork)
-        caps?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
+    // Función para verificar la conexión WiFi actual
+    fun isWifiConnectedNow(): Boolean {
+        val activeNetwork = connectivityManager.activeNetwork
+        val caps = connectivityManager.getNetworkCapabilities(activeNetwork)
+        return caps?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
     }
 
-    var isWifiEnabled by remember { mutableStateOf(checkWifi()) }
+    var isWifiConnected by remember { mutableStateOf(isWifiConnectedNow()) }
 
-    // Registra un callback para detectar cambios en la conectividad
     DisposableEffect(context) {
         val callback = object : ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: Network) {
-                isWifiEnabled = true
+                // Al conectarse a una red WiFi, actualizamos el estado
+                isWifiConnected = true
             }
 
             override fun onLost(network: Network) {
-                isWifiEnabled = checkWifi()
+                // Al perder la conexión WiFi, verificamos si queda alguna otra activa
+                isWifiConnected = isWifiConnectedNow()
             }
 
             override fun onCapabilitiesChanged(network: Network, networkCapabilities: NetworkCapabilities) {
-                isWifiEnabled = networkCapabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)
+                // Si cambian las capacidades, verificamos si sigue siendo WiFi funcional
+                isWifiConnected = networkCapabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)
             }
         }
 
+        // Filtramos para recibir SOLO eventos relacionados con WiFi
+        val request = NetworkRequest.Builder()
+            .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
+            .build()
+
         try {
-            connectivityManager.registerDefaultNetworkCallback(callback)
+            connectivityManager.registerNetworkCallback(request, callback)
         } catch (e: Exception) {
-            // Fallback en caso de error en el registro
+            isWifiConnected = isWifiConnectedNow()
         }
 
         onDispose {
-            try { connectivityManager.unregisterNetworkCallback(callback) } catch (e: Exception) {}
+            try { 
+                connectivityManager.unregisterNetworkCallback(callback) 
+            } catch (e: Exception) {}
         }
     }
 
     StatusIcon(
         imageVector = Icons.Default.Wifi,
         contentDescription = "WiFi",
-        isVisible = isWifiEnabled, // Solo visible si hay conexión activa
+        isVisible = isWifiConnected,
         onClick = {
             val systemManager = SystemControlManager(context)
             systemManager.abrirAjustesWifi()
