@@ -4,6 +4,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.hardware.usb.UsbConstants
 import android.hardware.usb.UsbManager
 import android.widget.Toast
 import androidx.compose.material.icons.Icons
@@ -16,7 +17,22 @@ import java.io.File
 fun UsbSection(context: Context) {
     val usbManager = remember { context.getSystemService(Context.USB_SERVICE) as UsbManager }
 
-    var isUsbConnected by remember { mutableStateOf(usbManager.deviceList.isNotEmpty()) }
+    // Función para verificar si hay USB EXTERNO conectado
+    fun hasExternalUsb(): Boolean {
+        return try {
+            val deviceList = usbManager.deviceList.values
+            deviceList.any { device ->
+                // Filtra solo dispositivos USB tipo almacenamiento (mass storage)
+                device.deviceClass == UsbConstants.USB_CLASS_MASS_STORAGE ||
+                        device.deviceClass == UsbConstants.USB_CLASS_MISC ||
+                        (device.deviceSubclass == 0x06 && device.deviceProtocol == 0x50) // Bulk-only transport
+            }
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    var isUsbConnected by remember { mutableStateOf(hasExternalUsb()) }
 
     // Función para encontrar la ruta del USB
     fun findUsbPath(): String? {
@@ -24,7 +40,6 @@ fun UsbSection(context: Context) {
             "/storage/usb0",
             "/storage/usb1",
             "/storage/external_sd",
-            "/storage/sdcard0",
             "/mnt/usb_storage",
             "/mnt/media_rw/usb0",
             "/mnt/media_rw/usb1",
@@ -43,7 +58,7 @@ fun UsbSection(context: Context) {
     DisposableEffect(context) {
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context?, intent: Intent?) {
-                isUsbConnected = usbManager.deviceList.isNotEmpty()
+                isUsbConnected = hasExternalUsb()
             }
         }
 
