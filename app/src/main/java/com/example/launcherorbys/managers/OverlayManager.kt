@@ -355,17 +355,21 @@ class OverlayManager(
         } else true
 
         if (!hasPermission) {
-            // Si falta el permiso, lanzamos la petición (trae la actividad al frente)
+            // Si falta el permiso en Android 12+, pedir permiso
+            // MainActivity manejará el diálogo y abrirá los ajustes cuando se conceda
             launchHomeIntent()
             service.sendBroadcast(Intent(Constants.ACTION_REQUEST_BLUETOOTH).setPackage(service.packageName))
-        } 
-        
-        // SIEMPRE abrir ajustes de Bluetooth como has pedido
-        systemManager.abrirAjustesBT()
-        
-        // Cerramos el panel de opciones para que el usuario vea la pantalla de ajustes
-        if (systemOptionsVisible) toggleSystemOptions()
+            // Cerramos el panel sin abrir ajustes todavía
+            if (systemOptionsVisible) toggleSystemOptions()
+        } else {
+            // Si ya tiene permiso, abrir directamente los ajustes de Bluetooth
+            systemManager.abrirAjustesBT()
+            // Cerramos el panel de opciones
+            if (systemOptionsVisible) toggleSystemOptions()
+        }
     }
+
+
 
     private fun takeScreenshot() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) service.performGlobalAction(GLOBAL_ACTION_TAKE_SCREENSHOT)
