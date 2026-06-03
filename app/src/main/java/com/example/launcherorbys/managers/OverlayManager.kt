@@ -321,6 +321,11 @@ class OverlayManager(
     // --- Lógica de Grabación ---
 
     fun startRecording() {
+        if (navBarExpanded) {
+            navBarExpanded = false
+            setupBarraNavegacion()
+            actualizarPosicionesSideNav()
+        }
         recordingManager.startTimer(service as LifecycleOwner)
         actualizarVentanaTimer(false)
         if (vistaTimer.parent == null) windowManager.addView(vistaTimer, paramsTimer)
@@ -374,8 +379,21 @@ class OverlayManager(
 
 
     private fun takeScreenshot() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) service.performGlobalAction(GLOBAL_ACTION_TAKE_SCREENSHOT)
-        else toast("No soportado")
+        if (navBarExpanded) {
+            navBarExpanded = false
+            setupBarraNavegacion()
+            actualizarPosicionesSideNav()
+        }
+
+        // Pequeño delay para que la barra desaparezca antes de la captura
+        vistaNav.postDelayed({
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                service.performGlobalAction(GLOBAL_ACTION_TAKE_SCREENSHOT)
+            } else {
+                toast("No soportado")
+            }
+        }, 300)
+
         toggleSystemOptions()
     }
 
