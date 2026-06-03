@@ -19,31 +19,25 @@ fun WifiSection(context: Context) {
     val connectivityManager = remember { 
         context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager 
     }
-    
-    // Función para verificar la conexión WiFi actual
-    fun isWifiConnectedNow(): Boolean {
-        val activeNetwork = connectivityManager.activeNetwork
-        val caps = connectivityManager.getNetworkCapabilities(activeNetwork)
-        return caps?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
-    }
 
-    var isWifiConnected by remember { mutableStateOf(isWifiConnectedNow()) }
+    // Usamos una lista de redes WiFi activas para mayor precisión
+    val activeWifiNetworks = remember { mutableStateListOf<Network>() }
+    val isWifiConnected = activeWifiNetworks.isNotEmpty()
 
     DisposableEffect(context) {
         val callback = object : ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: Network) {
-                // Al conectarse a una red WiFi, actualizamos el estado
-                isWifiConnected = true
+                if (!activeWifiNetworks.contains(network)) {
+                    activeWifiNetworks.add(network)
+                }
             }
 
             override fun onLost(network: Network) {
-                // Al perder la conexión WiFi, verificamos si queda alguna otra activa
-                isWifiConnected = isWifiConnectedNow()
+                activeWifiNetworks.remove(network)
             }
 
-            override fun onCapabilitiesChanged(network: Network, networkCapabilities: NetworkCapabilities) {
-                // Si cambian las capacidades, verificamos si sigue siendo WiFi funcional
-                isWifiConnected = networkCapabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)
+            override fun onUnavailable() {
+                activeWifiNetworks.clear()
             }
         }
 
@@ -53,9 +47,17 @@ fun WifiSection(context: Context) {
             .build()
 
         try {
+            // Comprobación inicial: si ya hay una red WiFi activa al empezar
+            connectivityManager.activeNetwork?.let { network ->
+                val caps = connectivityManager.getNetworkCapabilities(network)
+                if (caps?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true) {
+                    activeWifiNetworks.add(network)
+                }
+            }
+            
             connectivityManager.registerNetworkCallback(request, callback)
         } catch (e: Exception) {
-            isWifiConnected = isWifiConnectedNow()
+            // Fallback silencioso
         }
 
         onDispose {
