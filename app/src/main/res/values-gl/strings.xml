@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">LauncherOrbys</string>
+    <string name="drawer_search_placeholder">Buscar apps, ficheiros ou axustes…</string>
+    <string name="drawer_section_apps">APPS</string>
+    <string name="drawer_section_contacts">CONTACTOS</string>
+    <string name="drawer_section_searches">BUSCAS</string>
+    <string name="drawer_section_suggestions">SUXESTIÓNS</string>
+    <string name="search_prefix">Buscar: %1$s</string>
+    <string name="search_google">Buscar «%1$s» en Google</string>
+    <string name="search_settings">Buscar «%1$s» nos axustes</string>
+    <string name="search_play_store">Buscar «%1$s» na Play Store</string>
+    <string name="search_youtube">Buscar «%1$s» en YouTube</string>
+    <string name="content_desc_autocomplete">Completar</string>
+
+    <string name="permission_default_launcher">Lanzador Predeterminado</string>
+    <string name="permission_default_launcher_desc">Establecer Orbys como inicio principal</string>
+    <string name="permission_system_settings">Axustes do Sistema</string>
+    <string name="permission_system_settings_desc">Permitir axuste de brillo e volume</string>
+    <string name="permission_accessibility_service">Servizo de Accesibilidade</string>
+    <string name="permission_accessibility_service_desc">Activar xestos e accións rápidas</string>
+
+    <string name="dialog_audio_record_title">Gravar con audio?</string>
+    <string name="dialog_audio_record_desc">Requírese acceso ao micrófono para capturar son.</string>
+    <string name="dialog_audio_record_negative">Sen audio</string>
+
+    <string name="dialog_bluetooth_title">Permiso de Bluetooth</string>
+    <string name="dialog_bluetooth_desc">Requírese permiso para xestionar conexións sen fíos.</string>
+
+    <string name="setup_title">Configuración Inicial</string>
+    <string name="setup_description">Para activar Orbys, necesitamos estes permisos básicos:</string>
+    <string name="setup_hint">Toca as opcións para configurar</string>
+    <string name="btn_configure">Configurar</string>
+    <string name="btn_not_now">Agora non</string>
+</resources>

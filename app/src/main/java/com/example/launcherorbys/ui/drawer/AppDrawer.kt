@@ -21,9 +21,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.compose.ui.res.stringResource
+import com.example.launcherorbys.R
 import com.example.launcherorbys.managers.AppLauncher
 import com.example.launcherorbys.receivers.PackageReceiver
 import com.example.launcherorbys.ui.theme.Dimens
@@ -38,6 +41,8 @@ fun AppDrawer(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    // Forzamos que el componente observe cambios de configuración (idioma, etc)
+    val config = LocalConfiguration.current
     
     // Obtenemos el ViewModel usando la factoría por defecto si es posible
     val viewModel: AppDrawerViewModel = viewModel()
@@ -47,7 +52,12 @@ fun AppDrawer(
     val selectedPackage by viewModel.selectedPackage
     val appLauncher = remember { AppLauncher(context) }
 
-    // Limpiar selección y búsqueda al cerrar/desaparecer el cajón
+    // Limpiar selección y búsqueda al cerrar/desaparecer el cajón.
+    // También refrescamos las apps al abrir para asegurar etiquetas actualizadas tras cambio de idioma.
+    LaunchedEffect(Unit) {
+        viewModel.refreshApps()
+    }
+
     DisposableEffect(Unit) {
         onDispose {
             viewModel.selectPackage(null)
@@ -126,19 +136,22 @@ private fun SearchBar(
     query: String,
     onQueryChange: (String) -> Unit
 ) {
+    // Aseguramos que el componente se invalide si cambia el idioma
+    val config = LocalConfiguration.current
+
     TextField(
         value = query,
         onValueChange = onQueryChange,
         modifier = Modifier.fillMaxWidth().padding(Dimens.PaddingSmall),
         placeholder = { 
             Text(
-                "Buscar apps, archivos o ajustes...", 
+                stringResource(R.string.drawer_search_placeholder), 
                 color = Color.White.copy(alpha = 0.5f), 
                 style = MaterialTheme.typography.bodySmall
             ) 
         },
         leadingIcon = { 
-            Icon(Icons.Default.Search, "Buscar", tint = Color.White.copy(alpha = 0.7f)) 
+            Icon(Icons.Default.Search, stringResource(R.string.drawer_section_searches), tint = Color.White.copy(alpha = 0.7f)) 
         },
         singleLine = true,
         shape = RoundedCornerShape(Dimens.RadiusLarge),
@@ -186,7 +199,7 @@ private fun ResultsGrid(
         // 1. Sección de Aplicaciones (Lo más importante arriba)
         if (appsList.isNotEmpty()) {
             if (searchQuery.isNotEmpty()) {
-                item(span = { GridItemSpan(maxLineSpan) }) { SectionHeader("APLICACIONES") }
+                item(span = { GridItemSpan(maxLineSpan) }) { SectionHeader(stringResource(R.string.drawer_section_apps)) }
             }
             itemsIndexed(appsList) { index, result ->
                 val row = index / 4
@@ -204,7 +217,7 @@ private fun ResultsGrid(
 
         // 2. Sección de Contactos
         if (contactsList.isNotEmpty()) {
-            item(span = { GridItemSpan(maxLineSpan) }) { SectionHeader("CONTACTOS") }
+            item(span = { GridItemSpan(maxLineSpan) }) { SectionHeader(stringResource(R.string.drawer_section_contacts)) }
             items(contactsList) { result ->
                 ContactItem(contact = result.contact, onClicked = onClose)
             }
@@ -212,7 +225,7 @@ private fun ResultsGrid(
 
         // 3. Sección de Búsquedas Especiales y Autocompletado
         if (searchQuery.isNotEmpty()) {
-            item(span = { GridItemSpan(maxLineSpan) }) { SectionHeader("BÚSQUEDAS") }
+            item(span = { GridItemSpan(maxLineSpan) }) { SectionHeader(stringResource(R.string.drawer_section_searches)) }
             
             // 3.1. Buscar en Ajustes (Local)
             if (settingsSearch != null) {
@@ -230,7 +243,7 @@ private fun ResultsGrid(
 
             // 3.3. Sugerencias de Autocompletado de Google (Debajo del todo)
             if (suggestions.isNotEmpty()) {
-                item(span = { GridItemSpan(maxLineSpan) }) { SectionHeader("SUGERENCIAS") }
+                item(span = { GridItemSpan(maxLineSpan) }) { SectionHeader(stringResource(R.string.drawer_section_suggestions)) }
                 items(suggestions, span = { GridItemSpan(maxLineSpan) }) { sug ->
                     SuggestionItem(
                         text = sug.text, 

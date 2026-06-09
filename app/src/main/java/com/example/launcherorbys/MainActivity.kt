@@ -3,6 +3,7 @@ package com.example.launcherorbys
 import android.app.WallpaperColors
 import android.app.WallpaperManager
 import android.content.*
+import android.graphics.Rect
 import android.media.projection.MediaProjectionManager
 import android.net.Uri
 import android.os.Build
@@ -26,6 +27,7 @@ import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.compose.ui.res.stringResource
 import com.example.launcherorbys.data.repository.SettingsRepository
 import com.example.launcherorbys.managers.PermissionManager
 import com.example.launcherorbys.ui.home.HomeScreen
@@ -90,7 +92,16 @@ class MainActivity : ComponentActivity() {
     private val internalReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             when (intent?.action) {
-                Constants.ACTION_REQUEST_BLUETOOTH -> showBluetoothDialog = true
+                Constants.ACTION_REQUEST_BLUETOOTH -> {
+                    // Acción inmediata: Forzar la visibilidad del diálogo
+                    showBluetoothDialog = true
+                    
+                    // Forzar que la actividad se ponga al frente de forma absoluta
+                    val it = Intent(this@MainActivity, MainActivity::class.java).apply {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+                    }
+                    startActivity(it)
+                }
                 Intent.ACTION_WALLPAPER_CHANGED -> {
                     viewModel.setBackground(null, null)
                     settingsRepository.saveFondo("")
@@ -112,7 +123,7 @@ class MainActivity : ComponentActivity() {
         registerReceivers()
         setupWallpaperListener()
 
-        handleRecordingIntent(intent)
+        handleIntent(intent)
 
         onBackPressedDispatcher.addCallback(this) { /* Bloquear o manejar cierre */ }
 
@@ -126,7 +137,12 @@ class MainActivity : ComponentActivity() {
                     )
 
                     // Overlays de Permisos y Diálogos On-Demand
-                    UIPermissionGuard()
+                    val anyOnDemandShowing = showAudioDialog || showBluetoothDialog
+                    
+                    if (!anyOnDemandShowing) {
+                        UIPermissionGuard()
+                    }
+                    
                     if (showAudioDialog) UIAudioDialog()
                     if (showBluetoothDialog) UIBluetoothDialog()
                 }
@@ -152,15 +168,27 @@ class MainActivity : ComponentActivity() {
         if (!allGranted) {
             val permissionsList = remember(viewModel.isDefaultLauncher, viewModel.canWriteSettings, viewModel.isAccessibilityEnabled) {
                 listOf(
-                    PermissionItem("Lanzador Predeterminado", "Establecer Orbys como inicio principal", viewModel.isDefaultLauncher) {
+                    PermissionItem(
+                        getString(R.string.permission_default_launcher),
+                        getString(R.string.permission_default_launcher_desc),
+                        viewModel.isDefaultLauncher
+                    ) {
                         startActivity(Intent(Settings.ACTION_HOME_SETTINGS))
                         viewModel.startAutoCheck({ permissionManager.isDefaultLauncher() }, ::returnToMain)
                     },
-                    PermissionItem("Ajustes del Sistema", "Permitir ajuste de brillo y volumen", viewModel.canWriteSettings) {
+                    PermissionItem(
+                        getString(R.string.permission_system_settings),
+                        getString(R.string.permission_system_settings_desc),
+                        viewModel.canWriteSettings
+                    ) {
                         startActivity(Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS, Uri.parse("package:$packageName")))
                         viewModel.startAutoCheck({ permissionManager.canWriteSettings() }, ::returnToMain)
                     },
-                    PermissionItem("Servicio de Accesibilidad", "Activar gestos y acciones rápidas", viewModel.isAccessibilityEnabled) {
+                    PermissionItem(
+                        getString(R.string.permission_accessibility_service),
+                        getString(R.string.permission_accessibility_service_desc),
+                        viewModel.isAccessibilityEnabled
+                    ) {
                         startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
                         viewModel.startAutoCheck({ permissionManager.isAccessibilityEnabled() }, ::returnToMain)
                     }
@@ -173,8 +201,8 @@ class MainActivity : ComponentActivity() {
     @Composable
     private fun UIAudioDialog() {
         OnDemandPermissionDialog(
-            title = "¿Grabar con audio?",
-            description = "Se requiere acceso al micrófono para capturar sonido.",
+            title = stringResource(R.string.dialog_audio_record_title),
+            description = stringResource(R.string.dialog_audio_record_desc),
             icon = Icons.Default.Mic,
             onGrant = { requestAudioLauncher.launch(android.Manifest.permission.RECORD_AUDIO) },
             onDismiss = {
@@ -182,15 +210,15 @@ class MainActivity : ComponentActivity() {
                 showAudioDialog = false
                 pendingRecordingIntent = null
             },
-            secondaryText = "Sin audio"
+            secondaryText = stringResource(R.string.dialog_audio_record_negative)
         )
     }
 
     @Composable
     private fun UIBluetoothDialog() {
         OnDemandPermissionDialog(
-            title = "Permiso de Bluetooth",
-            description = "Se requiere permiso para gestionar conexiones inalámbricas.",
+            title = stringResource(R.string.dialog_bluetooth_title),
+            description = stringResource(R.string.dialog_bluetooth_desc),
             icon = Icons.Default.Bluetooth,
             onGrant = {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -206,18 +234,24 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun openBluetoothSettings() {
-        try {
-            startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS).apply {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            })
-        } catch (e: Exception) {
+        val intents = listOf(
+            Intent(Settings.ACTION_BLUETOOTH_SETTINGS).apply {
+                putExtra(":settings:show_fragment", "com.android.settings.bluetooth.BluetoothSettings")
+                putExtra(":android:show_fragment", "com.android.settings.bluetooth.BluetoothSettings")
+            },
+            Intent().apply {
+                setComponent(android.content.ComponentName("com.android.settings", "com.android.settings.Settings\$BluetoothSettingsActivity"))
+            },
+            Intent(Settings.ACTION_BLUETOOTH_SETTINGS),
+            Intent(Settings.ACTION_SETTINGS)
+        )
+
+        for (intent in intents) {
             try {
-                startActivity(Intent(Settings.ACTION_SETTINGS).apply {
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                })
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+                startActivity(intent)
+                return
+            } catch (e: Exception) {}
         }
     }
 
@@ -274,15 +308,24 @@ class MainActivity : ComponentActivity() {
         controller.hide(WindowInsetsCompat.Type.systemBars())
     }
 
-    private fun handleRecordingIntent(intent: Intent?) {
-        if (intent?.action == Constants.ACTION_START_SCREEN_RECORD) {
-            val mpm = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-            val captureIntent = mpm.createScreenCaptureIntent()
-            if (!permissionManager.hasAudioPermission()) {
-                pendingRecordingIntent = captureIntent
-                showAudioDialog = true
-            } else {
-                startProjection(captureIntent)
+    private fun handleIntent(intent: Intent?) {
+        if (intent == null) return
+        
+        when (intent.action) {
+            Constants.ACTION_START_SCREEN_RECORD -> {
+                val mpm = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+                val captureIntent = mpm.createScreenCaptureIntent()
+                if (!permissionManager.hasAudioPermission()) {
+                    pendingRecordingIntent = captureIntent
+                    showAudioDialog = true
+                } else {
+                    startProjection(captureIntent)
+                }
+            }
+            Constants.ACTION_REQUEST_BLUETOOTH -> {
+                showBluetoothDialog = true
+                // Limpiar la acción para que no se repita al rotar o volver
+                intent.action = null
             }
         }
     }
@@ -298,12 +341,42 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        handleRecordingIntent(intent)
+        handleIntent(intent)
+    }
+
+    private fun applyGestureExclusion() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val rootView = window.decorView
+            rootView.post {
+                val width = rootView.width
+                val height = rootView.height
+                val density = resources.displayMetrics.density
+
+                // El máximo permitido para exclusión lateral es 200dp de altura total.
+                // Para la parte inferior, intentamos cubrir el área de gestos de Home/Recientes.
+                val lateralHeight = (200 * density).toInt()
+                val bottomHeight = (80 * density).toInt()
+                val lateralWidth = (40 * density).toInt()
+
+                val rects = listOf(
+                    // Borde izquierdo (zona central para maximizar efectividad del "Atrás")
+                    Rect(0, (height / 2) - (lateralHeight / 2), lateralWidth, (height / 2) + (lateralHeight / 2)),
+                    // Borde derecho (zona central)
+                    Rect(width - lateralWidth, (height / 2) - (lateralHeight / 2), width, (height / 2) + (lateralHeight / 2)),
+                    // Borde inferior (Home y Recientes)
+                    Rect(0, height - bottomHeight, width, height)
+                )
+                rootView.systemGestureExclusionRects = rects
+            }
+        }
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
-        if (hasFocus) hideStatusBar()
+        if (hasFocus) {
+            hideStatusBar()
+            applyGestureExclusion()
+        }
     }
 
     override fun onDestroy() {

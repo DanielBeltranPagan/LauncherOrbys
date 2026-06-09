@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">LauncherOrbys</string>
+    <string name="drawer_search_placeholder">Pesquisar apps, ficheiros ou definições…</string>
+    <string name="drawer_section_apps">APPS</string>
+    <string name="drawer_section_contacts">CONTACTOS</string>
+    <string name="drawer_section_searches">PESQUISAS</string>
+    <string name="drawer_section_suggestions">SUGESTÕES</string>
+    <string name="search_prefix">Pesquisar: %1$s</string>
+    <string name="search_google">Pesquisar «%1$s» no Google</string>
+    <string name="search_settings">Pesquisar «%1$s» nas definições</string>
+    <string name="search_play_store">Pesquisar «%1$s» na Play Store</string>
+    <string name="search_youtube">Pesquisar «%1$s» no YouTube</string>
+    <string name="content_desc_autocomplete">Completar</string>
+
+    <string name="permission_default_launcher">Launcher Predefinido</string>
+    <string name="permission_default_launcher_desc">Definir Orbys como ecrã principal</string>
+    <string name="permission_system_settings">Definições do Sistema</string>
+    <string name="permission_system_settings_desc">Permitir ajuste de brilho e volume</string>
+    <string name="permission_accessibility_service">Serviço de Acessibilidade</string>
+    <string name="permission_accessibility_service_desc">Ativar gestos e ações rápidas</string>
+
+    <string name="dialog_audio_record_title">Gravar com áudio?</string>
+    <string name="dialog_audio_record_desc">O acesso ao microfone é necessário para capturar som.</string>
+    <string name="dialog_audio_record_negative">Sem áudio</string>
+
+    <string name="dialog_bluetooth_title">Permissão Bluetooth</string>
+    <string name="dialog_bluetooth_desc">É necessária permissão para gerir ligações sem fios.</string>
+
+    <string name="setup_title">Configuração Inicial</string>
+    <string name="setup_description">Para ativar o Orbys, precisamos destas permissões básicas:</string>
+    <string name="setup_hint">Toque nas opções para configurar</string>
+    <string name="btn_configure">Configurar</string>
+    <string name="btn_not_now">Agora não</string>
+</resources>

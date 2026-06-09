@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">LauncherOrbys</string>
+    <string name="drawer_search_placeholder">Apps, Dateien oder Einstellungen suchen…</string>
+    <string name="drawer_section_apps">APPS</string>
+    <string name="drawer_section_contacts">KONTAKTE</string>
+    <string name="drawer_section_searches">SUCHE</string>
+    <string name="drawer_section_suggestions">VORSCHLÄGE</string>
+    <string name="search_prefix">Suche: %1$s</string>
+    <string name="search_google">«%1$s» auf Google suchen</string>
+    <string name="search_settings">«%1$s» in Einstellungen suchen</string>
+    <string name="search_play_store">«%1$s» im Play Store suchen</string>
+    <string name="search_youtube">«%1$s» auf YouTube suchen</string>
+    <string name="content_desc_autocomplete">Vervollständigen</string>
+
+    <string name="permission_default_launcher">Standard-Launcher</string>
+    <string name="permission_default_launcher_desc">Orbys als Haupt-Startbildschirm festlegen</string>
+    <string name="permission_system_settings">Systemeinstellungen</string>
+    <string name="permission_system_settings_desc">Helligkeit und Lautstärke anpassen erlauben</string>
+    <string name="permission_accessibility_service">Barrierefreiheitsdienst</string>
+    <string name="permission_accessibility_service_desc">Gesten und Schnellaktionen aktivieren</string>
+
+    <string name="dialog_audio_record_title">Mit Audio aufnehmen?</string>
+    <string name="dialog_audio_record_desc">Der Mikrofonzugriff ist erforderlich, um Ton aufzunehmen.</string>
+    <string name="dialog_audio_record_negative">Ohne Audio</string>
+
+    <string name="dialog_bluetooth_title">Bluetooth-Berechtigung</string>
+    <string name="dialog_bluetooth_desc">Die Berechtigung ist erforderlich, um drahtlose Verbindungen zu verwalten.</string>
+
+    <string name="setup_title">Ersteinrichtung</string>
+    <string name="setup_description">Um Orbys zu aktivieren, benötigen wir diese Basisberechtigungen:</string>
+    <string name="setup_hint">Tippen Sie zum Konfigurieren auf die Optionen</string>
+    <string name="btn_configure">Konfigurieren</string>
+    <string name="btn_not_now">Nicht jetzt</string>
+</resources>

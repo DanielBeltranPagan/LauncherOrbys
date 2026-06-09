@@ -1,0 +1,36 @@
+<resources>
+    <string name="app_name" translatable="false">LauncherOrbys</string>
+    <string name="accessibility_description">Permite que la barra de navegación ejecute acciones de sistema como Atrás e Inicio.</string>
+
+    <string name="drawer_search_placeholder">Buscar apps, archivos o ajustes...</string>
+    <string name="drawer_section_apps">APLICACIONES</string>
+    <string name="drawer_section_contacts">CONTACTOS</string>
+    <string name="drawer_section_searches">BÚSQUEDAS</string>
+    <string name="drawer_section_suggestions">SUGERENCIAS</string>
+    <string name="search_prefix">Buscar: %1$s</string>
+    <string name="search_google">Buscar «%1$s» en Google</string>
+    <string name="search_settings">Buscar «%1$s» en Ajustes</string>
+    <string name="search_play_store">Buscar «%1$s» en Play Store</string>
+    <string name="search_youtube">Buscar «%1$s» en YouTube</string>
+    <string name="content_desc_autocomplete">Completar</string>
+
+    <string name="permission_default_launcher">Lanzador Predeterminado</string>
+    <string name="permission_default_launcher_desc">Establecer Orbys como inicio principal</string>
+    <string name="permission_system_settings">Ajustes del Sistema</string>
+    <string name="permission_system_settings_desc">Permitir ajuste de brillo y volumen</string>
+    <string name="permission_accessibility_service">Servicio de Accesibilidad</string>
+    <string name="permission_accessibility_service_desc">Activar gestos y acciones rápidas</string>
+
+    <string name="dialog_audio_record_title">¿Grabar con audio?</string>
+    <string name="dialog_audio_record_desc">Se requiere acceso al micrófono para capturar sonido.</string>
+    <string name="dialog_audio_record_negative">Sin audio</string>
+
+    <string name="dialog_bluetooth_title">Permiso de Bluetooth</string>
+    <string name="dialog_bluetooth_desc">Se requiere permiso para gestionar conexiones inalámbricas.</string>
+
+    <string name="setup_title">Configuración Inicial</string>
+    <string name="setup_description">Para activar Orbys, necesitamos estos permisos básicos:</string>
+    <string name="setup_hint">Toca las opciones para configurar</string>
+    <string name="btn_configure">Configurar</string>
+    <string name="btn_not_now">Ahora no</string>
+</resources>

@@ -12,11 +12,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.example.launcherorbys.R
 
 /**
  * Diálogo estético que solicita los permisos críticos iniciales.
@@ -67,7 +69,7 @@ fun PermissionDialog(
                     Spacer(modifier = Modifier.height(16.dp))
                     
                     Text(
-                        text = "Configuración Inicial",
+                        text = stringResource(R.string.setup_title),
                         style = MaterialTheme.typography.headlineSmall,
                         fontWeight = FontWeight.ExtraBold,
                         color = MaterialTheme.colorScheme.onSurface
@@ -76,7 +78,7 @@ fun PermissionDialog(
                     Spacer(modifier = Modifier.height(8.dp))
                     
                     Text(
-                        text = "Para activar Orbys, necesitamos estos permisos básicos:",
+                        text = stringResource(R.string.setup_description),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = androidx.compose.ui.text.style.TextAlign.Center
@@ -93,7 +95,7 @@ fun PermissionDialog(
                     Spacer(modifier = Modifier.height(24.dp))
                     
                     Text(
-                        text = "Toca las opciones para configurar",
+                        text = stringResource(R.string.setup_hint),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)
                     )

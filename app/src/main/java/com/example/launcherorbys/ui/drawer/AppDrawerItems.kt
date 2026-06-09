@@ -30,6 +30,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.core.graphics.drawable.toBitmap
+import androidx.compose.ui.res.stringResource
+import com.example.launcherorbys.R
 import com.example.launcherorbys.data.model.AppInfo
 import com.example.launcherorbys.managers.AppLauncher
 import com.example.launcherorbys.ui.theme.Dimens
@@ -264,9 +266,10 @@ fun SystemActionItem(action: SystemAction, onClicked: () -> Unit) {
 
 @Composable
 fun WebSearchItem(query: String, onClicked: () -> Unit) {
+    val label = stringResource(R.string.search_prefix, query)
     SystemActionItem(
         action = SystemAction(
-            label = "Buscar: $query",
+            label = label,
             icon = Icons.Default.Language,
             intent = Intent(Intent.ACTION_WEB_SEARCH).apply { putExtra("query", query) }
         ),
@@ -308,7 +311,7 @@ fun SuggestionItem(
         ) {
             Icon(
                 Icons.Default.ArrowOutward,
-                contentDescription = "Completar",
+                contentDescription = stringResource(R.string.content_desc_autocomplete),
                 tint = Color.White.copy(alpha = 0.3f),
                 modifier = Modifier.size(18.dp)
             )
@@ -320,7 +323,7 @@ fun SuggestionItem(
 fun GoogleSearchItem(query: String, onClicked: () -> Unit) {
     val context = LocalContext.current
     LongSearchItem(
-        label = "Buscar \"$query\" en Google",
+        label = stringResource(R.string.search_google, query),
         icon = Icons.Default.Public,
         onClick = {
             try {
@@ -339,7 +342,7 @@ fun GoogleSearchItem(query: String, onClicked: () -> Unit) {
 fun SettingsSearchItem(query: String, onClicked: () -> Unit) {
     val context = LocalContext.current
     LongSearchItem(
-        label = "Buscar \"$query\" en Ajustes",
+        label = stringResource(R.string.search_settings, query),
         icon = Icons.Default.Settings,
         onClick = {
             onClicked()
@@ -368,7 +371,7 @@ fun SettingsSearchItem(query: String, onClicked: () -> Unit) {
 fun PlayStoreSearchItem(query: String, onClicked: () -> Unit) {
     val context = LocalContext.current
     LongSearchItem(
-        label = "Buscar \"$query\" en Play Store",
+        label = stringResource(R.string.search_play_store, query),
         icon = Icons.Default.Shop,
         onClick = {
             try {
@@ -396,7 +399,7 @@ fun PlayStoreSearchItem(query: String, onClicked: () -> Unit) {
 fun YouTubeSearchItem(query: String, onClicked: () -> Unit) {
     val context = LocalContext.current
     LongSearchItem(
-        label = "Buscar \"$query\" en YouTube",
+        label = stringResource(R.string.search_youtube, query),
         icon = Icons.Default.PlayCircle,
         onClick = {
             try {

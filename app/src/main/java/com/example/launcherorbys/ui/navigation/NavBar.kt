@@ -1,5 +1,9 @@
 package com.example.launcherorbys.ui.navigation
 
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
@@ -16,9 +20,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.*
@@ -37,6 +44,9 @@ fun NavBar(
     isExpanded: Boolean = true,
     clockAtLeft: Boolean = true
 ) {
+    val context = LocalContext.current
+    val configuration = LocalConfiguration.current
+    
     val height by animateDpAsState(targetValue = if (isExpanded) 48.dp else 0.dp, label = "navHeight")
     val contentAlpha by animateFloatAsState(targetValue = if (isExpanded) 1f else 0f, label = "contentAlpha")
     
@@ -52,18 +62,47 @@ fun NavBar(
         }
     }
 
-    val timeFormatter = remember { 
-        SimpleDateFormat("HH:mm", Locale.getDefault())
-    }
-    
     var currentTime by remember { 
-        mutableStateOf(timeFormatter.format(Date())) 
+        mutableStateOf("") 
     }
 
-    LaunchedEffect(Unit) {
+    // Función para obtener la hora formateada respetando los ajustes del sistema (12h/24h)
+    val updateTime = {
+        val is24Hour = android.text.format.DateFormat.is24HourFormat(context)
+        val pattern = if (is24Hour) "HH:mm" else "h:mm a"
+        val sdf = SimpleDateFormat(pattern, configuration.locales[0])
+        // Forzamos al calendario a obtener la zona horaria actual del sistema
+        sdf.calendar = Calendar.getInstance()
+        currentTime = sdf.format(Date())
+    }
+
+    // Sincronización con la hora del sistema y cambios de zona horaria/región
+    DisposableEffect(context, configuration.locales[0]) {
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                updateTime()
+            }
+        }
+        val filter = IntentFilter().apply {
+            addAction(Intent.ACTION_TIME_TICK)
+            addAction(Intent.ACTION_TIME_CHANGED)
+            addAction(Intent.ACTION_TIMEZONE_CHANGED)
+            addAction(Intent.ACTION_LOCALE_CHANGED)
+        }
+        
+        ContextCompat.registerReceiver(context, receiver, filter, ContextCompat.RECEIVER_EXPORTED)
+        updateTime()
+        
+        onDispose {
+            try { context.unregisterReceiver(receiver) } catch (_: Exception) {}
+        }
+    }
+
+    // Loop de respaldo para asegurar que la hora se actualice incluso si los eventos fallan
+    LaunchedEffect(configuration.locales[0]) {
         while (true) {
-            currentTime = timeFormatter.format(Date())
-            delay(1000)
+            updateTime()
+            delay(10000) // Actualizar cada 10 segundos es suficiente para HH:mm
         }
     }
 

@@ -5,26 +5,20 @@ import android.accessibilityservice.AccessibilityService.*
 import android.content.Context
 import android.content.Intent
 import android.graphics.PixelFormat
+import android.content.res.Configuration
 import android.os.Build
 import android.provider.Settings
 import android.view.Gravity
 import android.view.WindowManager
 import android.widget.Toast
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
+import androidx.compose.foundation.layout.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ViewModelStoreOwner
@@ -53,6 +47,16 @@ class OverlayManager(
 ) {
     private val windowManager = service.getSystemService(Context.WINDOW_SERVICE) as WindowManager
     private val recordingManager = RecordingManager(service)
+
+    // Estado observable para forzar la actualización de recursos cuando cambia la configuración (idioma, etc.)
+    private var configurationTick by mutableIntStateOf(0)
+
+    fun onConfigurationChanged() {
+        configurationTick++
+        // Actualizamos los parámetros de todas las vistas para que el sistema refresque sus recursos
+        if (::vistaNav.isInitialized) setupBarraNavegacion()
+        if (::vistaSideNavLeft.isInitialized) actualizarPosicionesSideNav()
+    }
 
     // --- Vistas de Superposición ---
     private lateinit var vistaNav: ComposeView
@@ -143,6 +147,8 @@ class OverlayManager(
 
     fun toggleDrawer() {
         if (!drawerVisible) {
+            // Cada vez que se abre, forzamos actualización de configuración
+            configurationTick++ 
             drawerVisible = true
             windowManager.addView(vistaDrawer, createOverlayParams(MATCH_PARENT, MATCH_PARENT))
         } else {
@@ -153,6 +159,7 @@ class OverlayManager(
 
     fun toggleSystemOptions() {
         if (!systemOptionsVisible) {
+            configurationTick++
             systemManager.actualizarValoresSistema()
             systemOptionsVisible = true
             windowManager.addView(vistaSystemOptions, createOverlayParams(MATCH_PARENT, MATCH_PARENT))
@@ -360,18 +367,23 @@ class OverlayManager(
         } else true
 
         if (!hasPermission) {
-            // Si falta el permiso en Android 12+, SOLO pedir permiso
-            launchHomeIntent()
-            service.sendBroadcast(Intent(Constants.ACTION_REQUEST_BLUETOOTH).setPackage(service.packageName))
-            // Cerramos el panel de opciones
+            // Logica para forzar la aparición del diálogo de permiso en MainActivity
+            val intent = Intent(service, com.example.launcherorbys.MainActivity::class.java).apply {
+                action = Constants.ACTION_REQUEST_BLUETOOTH
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+            }
+            service.startActivity(intent)
+            
+            // Cerramos el panel para que el usuario vea la actividad
             if (systemOptionsVisible) toggleSystemOptions()
-            return  // ← IMPORTANTE: SALIR SIN ABRIR AJUSTES
+            return
         }
 
-        // Si ya tiene permiso, abrir directamente ajustes de Bluetooth
+        // Si ya tiene permiso, vamos directo a la pantalla de Bluetooth
         systemManager.abrirAjustesBT()
 
-        // Cerramos el panel de opciones para que el usuario vea la pantalla de ajustes
         if (systemOptionsVisible) toggleSystemOptions()
     }
 
@@ -484,14 +496,20 @@ class OverlayManager(
     }
 
     private fun createComposeView(content: @Composable () -> Unit): ComposeView {
+        // En servicios de accesibilidad, a veces el contexto base no refresca recursos automáticamente.
+        // Usamos LocalConfiguration y un key para asegurar recomposición total.
         return ComposeView(service).apply {
             setViewTreeLifecycleOwner(service as LifecycleOwner)
             setViewTreeSavedStateRegistryOwner(service as SavedStateRegistryOwner)
             setViewTreeViewModelStoreOwner(service as ViewModelStoreOwner)
             setContent { 
-                LauncherOrbysTheme(darkTheme = navBarBackground == Color.White) { 
-                    content() 
-                } 
+                val configuration = LocalConfiguration.current
+                // La clave del locale asegura que Compose invalide TODO lo que dependa de recursos.
+                key(configuration.locales[0].language, configurationTick) {
+                    LauncherOrbysTheme(darkTheme = navBarBackground == Color.White) { 
+                        content() 
+                    }
+                }
             }
         }
     }

@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">LauncherOrbys</string>
+    <string name="drawer_search_placeholder">Cerca app, file o impostazioni…</string>
+    <string name="drawer_section_apps">APPLICAZIONI</string>
+    <string name="drawer_section_contacts">CONTATTI</string>
+    <string name="drawer_section_searches">RICERCHE</string>
+    <string name="drawer_section_suggestions">SUGGERIMENTI</string>
+    <string name="search_prefix">Cerca: %1$s</string>
+    <string name="search_google">Cerca «%1$s» su Google</string>
+    <string name="search_settings">Cerca «%1$s» nelle impostazioni</string>
+    <string name="search_play_store">Cerca «%1$s» nel Play Store</string>
+    <string name="search_youtube">Cerca «%1$s» su YouTube</string>
+    <string name="content_desc_autocomplete">Completare</string>
+
+    <string name="permission_default_launcher">Launcher Predefinito</string>
+    <string name="permission_default_launcher_desc">Imposta Orbys come home page principale</string>
+    <string name="permission_system_settings">Impostazioni di Sistema</string>
+    <string name="permission_system_settings_desc">Consenti la regolazione di luminosità e volume</string>
+    <string name="permission_accessibility_service">Servizio di Accessibilità</string>
+    <string name="permission_accessibility_service_desc">Attiva gesti e azioni rapide</string>
+
+    <string name="dialog_audio_record_title">Registrare con audio?</string>
+    <string name="dialog_audio_record_desc">È richiesto l\'accesso al microfono per catturare il suono.</string>
+    <string name="dialog_audio_record_negative">Senza audio</string>
+
+    <string name="dialog_bluetooth_title">Permesso Bluetooth</string>
+    <string name="dialog_bluetooth_desc">È richiesto il permesso per gestire le connessioni wireless.</string>
+
+    <string name="setup_title">Configurazione Iniziale</string>
+    <string name="setup_description">Per attivare Orbys, abbiamo bisogno di questi permessi di base:</string>
+    <string name="setup_hint">Tocca le opzioni per configurare</string>
+    <string name="btn_configure">Configura</string>
+    <string name="btn_not_now">Adesso no</string>
+</resources>

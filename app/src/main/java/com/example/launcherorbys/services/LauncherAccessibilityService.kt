@@ -9,6 +9,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.res.Configuration
 import android.view.KeyEvent
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityWindowInfo
@@ -149,6 +150,20 @@ class LauncherAccessibilityService : AccessibilityService(), LifecycleOwner, Sav
         ContextCompat.registerReceiver(this, receptorComandos, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
     }
 
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        
+        // Refrescamos los recursos del contexto base para asegurar que el sistema no use caché antigua
+        try {
+            @Suppress("DEPRECATION")
+            resources.updateConfiguration(newConfig, resources.displayMetrics)
+        } catch (_: Exception) {}
+
+        if (::overlayManager.isInitialized) {
+            overlayManager.onConfigurationChanged()
+        }
+    }
+
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         val type = event?.eventType
 
@@ -167,8 +182,12 @@ class LauncherAccessibilityService : AccessibilityService(), LifecycleOwner, Sav
             val pkg = event.packageName?.toString() ?: ""
             val cls = event.className?.toString() ?: ""
 
-            // Si detectamos que se abre el panel de aplicaciones recientes (Overview/Recents)
-            if (pkg == "com.android.systemui" && (cls.contains("Recents") || cls.contains("RecentApps"))) {
+            // Detección de panel de aplicaciones recientes (SystemUI o Launchers con QuickStep)
+            val isSystemUI = pkg.contains("systemui") || pkg.contains("quickstep")
+            val isRecents = cls.contains("Recents") || cls.contains("Overview") || cls.contains("RecentApps")
+
+            if (isSystemUI && isRecents) {
+                // Volver a Home si se intenta abrir Recientes
                 performGlobalAction(GLOBAL_ACTION_HOME)
             }
         }
@@ -181,9 +200,11 @@ class LauncherAccessibilityService : AccessibilityService(), LifecycleOwner, Sav
     override fun onKeyEvent(event: KeyEvent?): Boolean {
         if (event == null) return false
         
-        // Bloquear el botón de aplicaciones recientes (App Switch / Multitarea)
-        if (event.keyCode == KeyEvent.KEYCODE_APP_SWITCH) {
-            return true // Consumir evento: bloquea la acción
+        // Bloquear botones/gestos de navegación si estamos en el Launcher
+        val isLauncherInFront = lastPackageName == packageName || lastPackageName == null
+        
+        if (isLauncherInFront && (event.keyCode == KeyEvent.KEYCODE_APP_SWITCH || event.keyCode == KeyEvent.KEYCODE_BACK)) {
+            return true
         }
         
         return super.onKeyEvent(event)

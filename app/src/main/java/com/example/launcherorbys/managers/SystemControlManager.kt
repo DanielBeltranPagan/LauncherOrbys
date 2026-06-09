@@ -111,15 +111,20 @@ class SystemControlManager(private val context: Context) {
 
         try {
             @Suppress("DEPRECATION")
-            if (adapter.isEnabled) {
+            val success = if (adapter.isEnabled) {
                 adapter.disable()
             } else {
                 adapter.enable()
             }
-            // Actualizar estado local inmediatamente
-            isBluetoothOn = adapter.isEnabled
+            
+            if (!success) {
+                // Si el toggle directo falla (común en Android 13+), abrimos ajustes
+                abrirAjustesBT()
+            } else {
+                // Actualizar estado local (aunque el broadcast de sistema lo hará después)
+                isBluetoothOn = !adapter.isEnabled
+            }
         } catch (e: Exception) {
-            // Si falla el toggle directo (restricciones de Android moderno), abrimos ajustes
             abrirAjustesBT()
         }
     }
@@ -184,22 +189,29 @@ class SystemControlManager(private val context: Context) {
     }
 
     fun abrirAjustesBT() {
-        try {
-            val intent = Intent(Settings.ACTION_BLUETOOTH_SETTINGS).apply {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
-            }
-            context.startActivity(intent)
-        } catch (e: Exception) {
+        val intents = listOf(
+            // 1. Intent con extras para forzar el fragmento de Bluetooth (muy efectivo en Android 10-14)
+            Intent(Settings.ACTION_BLUETOOTH_SETTINGS).apply {
+                putExtra(":settings:show_fragment", "com.android.settings.bluetooth.BluetoothSettings")
+                putExtra(":android:show_fragment", "com.android.settings.bluetooth.BluetoothSettings")
+            },
+            // 2. Intento directo al componente interno
+            Intent().apply {
+                setComponent(android.content.ComponentName("com.android.settings", "com.android.settings.Settings\$BluetoothSettingsActivity"))
+            },
+            // 3. Acción estándar de Bluetooth
+            Intent(Settings.ACTION_BLUETOOTH_SETTINGS),
+            // 4. Acción alternativa (Connected Devices) que a veces contiene Bluetooth en Android 12+
+            Intent("android.settings.CONNECTED_DEVICE_SETTINGS")
+        )
+
+        for (intent in intents) {
             try {
-                // Fallback 1: Pantalla de dispositivos conectados / conectividad
-                val intent = Intent("android.settings.CONNECT_SETTINGS").apply {
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                intent.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
                 context.startActivity(intent)
-            } catch (e2: Exception) {
-                abrirAjustesFallback()
-            }
+                return
+            } catch (e: Exception) {}
         }
     }
 
@@ -230,7 +242,13 @@ class SystemControlManager(private val context: Context) {
     private fun solicitarPermisoEscritura() {
         val intent = Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS, Uri.parse("package:${context.packageName}"))
         context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-        toast("Concede permiso para cambiar el brillo")
+        // Mostramos un mensaje genérico o usamos el contexto para obtener el string
+        try {
+            val msg = context.getString(com.example.launcherorbys.R.string.permission_system_settings_desc)
+            toast(msg)
+        } catch (_: Exception) {
+            toast("Concede permiso para cambiar el brillo")
+        }
     }
 
     private fun toast(m: String) = Toast.makeText(context, m, Toast.LENGTH_SHORT).show()

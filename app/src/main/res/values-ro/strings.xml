@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">LauncherOrbys</string>
+    <string name="drawer_search_placeholder">Caută aplicații, fișiere sau setări…</string>
+    <string name="drawer_section_apps">APLICAȚII</string>
+    <string name="drawer_section_contacts">CONTACTE</string>
+    <string name="drawer_section_searches">CĂUTĂRI</string>
+    <string name="drawer_section_suggestions">SUGESTII</string>
+    <string name="search_prefix">Caută: %1$s</string>
+    <string name="search_google">Caută «%1$s» pe Google</string>
+    <string name="search_settings">Caută «%1$s» în setări</string>
+    <string name="search_play_store">Caută «%1$s» în Play Store</string>
+    <string name="search_youtube">Caută «%1$s» pe YouTube</string>
+    <string name="content_desc_autocomplete">Autocomplete</string>
+
+    <string name="permission_default_launcher">Launcher implicit</string>
+    <string name="permission_default_launcher_desc">Setează Orbys ca ecran principal</string>
+    <string name="permission_system_settings">Setări sistem</string>
+    <string name="permission_system_settings_desc">Permite reglarea luminozității și a volumului</string>
+    <string name="permission_accessibility_service">Serviciu de accesibilitate</string>
+    <string name="permission_accessibility_service_desc">Activează gesturile și acțiunile rapide</string>
+
+    <string name="dialog_audio_record_title">Înregistrezi cu audio?</string>
+    <string name="dialog_audio_record_desc">Accesul la microfon este necesar pentru a captura sunetul.</string>
+    <string name="dialog_audio_record_negative">Fără audio</string>
+
+    <string name="dialog_bluetooth_title">Permisiune Bluetooth</string>
+    <string name="dialog_bluetooth_desc">Este necesară permisiunea pentru a gestiona conexiunile wireless.</string>
+
+    <string name="setup_title">Configurare inițială</string>
+    <string name="setup_description">Pentru a activa Orbys, avem nevoie de aceste permisiuni de bază:</string>
+    <string name="setup_hint">Atinge opțiunile pentru a configura</string>
+    <string name="btn_configure">Configurează</string>
+    <string name="btn_not_now">Nu acum</string>
+</resources>

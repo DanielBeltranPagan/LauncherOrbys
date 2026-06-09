@@ -84,7 +84,9 @@ class AppDrawerViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     fun refreshApps() {
-        repository.refreshApps()
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.refreshApps()
+        }
     }
 
     private fun performSearch(query: String) {

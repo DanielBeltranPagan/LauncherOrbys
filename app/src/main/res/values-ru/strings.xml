@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">LauncherOrbys</string>
+    <string name="drawer_search_placeholder">Поиск приложений, файлов или настроек…</string>
+    <string name="drawer_section_apps">ПРИЛОЖЕНИЯ</string>
+    <string name="drawer_section_contacts">КОНТАКТЫ</string>
+    <string name="drawer_section_searches">ПОИСК</string>
+    <string name="drawer_section_suggestions">ПРЕДЛОЖЕНИЯ</string>
+    <string name="search_prefix">Поиск: %1$s</string>
+    <string name="search_google">Искать «%1$s» в Google</string>
+    <string name="search_settings">Искать «%1$s» в настройках</string>
+    <string name="search_play_store">Искать «%1$s» в Play Store</string>
+    <string name="search_youtube">Искать «%1$s» на YouTube</string>
+    <string name="content_desc_autocomplete">Автозаполнение</string>
+
+    <string name="permission_default_launcher">Лаунчер по умолчанию</string>
+    <string name="permission_default_launcher_desc">Установить Orbys как основной экран</string>
+    <string name="permission_system_settings">Системные настройки</string>
+    <string name="permission_system_settings_desc">Разрешить изменение яркости и громкости</string>
+    <string name="permission_accessibility_service">Служба специальных возможностей</string>
+    <string name="permission_accessibility_service_desc">Включить жесты и быстрые действия</string>
+
+    <string name="dialog_audio_record_title">Записывать со звуком?</string>
+    <string name="dialog_audio_record_desc">Для записи звука требуется доступ к микрофону.</string>
+    <string name="dialog_audio_record_negative">Без звука</string>
+
+    <string name="dialog_bluetooth_title">Разрешение Bluetooth</string>
+    <string name="dialog_bluetooth_desc">Требуется разрешение для управления беспроводными соединениями.</string>
+
+    <string name="setup_title">Начальная настройка</string>
+    <string name="setup_description">Для активации Orbys нам нужны основные разрешения:</string>
+    <string name="setup_hint">Нажмите на опции для настройки</string>
+    <string name="btn_configure">Настроить</string>
+    <string name="btn_not_now">Не сейчас</string>
+</resources>

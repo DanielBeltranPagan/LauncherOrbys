@@ -1,8 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">LauncherOrbys</string>
-    <string name="accessibility_description">Allows the navigation bar to perform system actions like Back and Home.</string>
-
     <string name="drawer_search_placeholder">Search apps, files or settings…</string>
     <string name="drawer_section_apps">APPS</string>
     <string name="drawer_section_contacts">CONTACTS</string>
