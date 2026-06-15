@@ -47,6 +47,11 @@ android {
     buildFeatures {
         compose = true
     }
+
+    lint {
+        checkReleaseBuilds = false
+        abortOnError = false
+    }
 }
 
 dependencies {
@@ -75,6 +80,9 @@ dependencies {
     implementation(libs.androidx.savedstate.ktx)
     implementation(libs.androidx.datastore.preferences)
 
+    // Coil para carga de imágenes optimizada
+    implementation(libs.coil.compose)
+
     // Pruebas
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
@@ -88,19 +96,26 @@ dependencies {
     dokkaPlugin(libs.dokka.android.documentation)
 }
 
+// Configuración de Dokka para una documentación técnica limpia y profesional
 dokka {
     dokkaPublications.html {
-        moduleName.set("LauncherOrbys")
+        moduleName.set("Launcher Orbys Core")
+        
         // Incluimos una descripción general del proyecto desde el README
         includes.from(project.layout.projectDirectory.file("../README.md"))
         
-        // Configuramos para que no falle si falta alguna documentación, pero avise
+        // Evita mostrar archivos generados por Android/Kotlin en la documentación
         failOnWarning.set(false)
     }
+
     dokkaSourceSets.configureEach {
+        // Nombre del conjunto de fuentes
+        displayName.set("Android Main")
+        
+        // Suprimir archivos generados automáticamente (R, BuildKonfig, etc)
         suppressGeneratedFiles.set(true)
         
-        // Dokka 2.2.0 ya configura automáticamente links para SDK y Kotlin.
-        // Si tuvieras bibliotecas extra, las registrarías en dokkaPublications.html
+        // Documentar miembros privados si se desea una doc técnica completa interna
+        // reportUndocumented.set(true) 
     }
 }

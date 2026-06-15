@@ -1,15 +1,9 @@
 package com.example.launcherorbys.ui.drawer
 
 import android.app.Application
-import android.content.ContentUris
 import android.content.Intent
 import android.net.Uri
 import android.provider.ContactsContract
-import android.provider.MediaStore
-import android.provider.Settings
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.VolumeUp
-import androidx.compose.material.icons.filled.*
 import androidx.compose.runtime.State
 import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.AndroidViewModel
@@ -27,169 +21,161 @@ import kotlinx.coroutines.withContext
 /**
  * ViewModel que gestiona la lógica del cajón de aplicaciones y el motor de búsqueda.
  */
-class AppDrawerViewModel(application: Application) : AndroidViewModel(application) {
+class AppDrawerViewModel(aplicacion: Application) : AndroidViewModel(aplicacion) {
 
-    private val repository = AppRepository(application)
-    private val context get() = getApplication<Application>()
+    private val repositorio = AppRepository(aplicacion)
+    private val contexto get() = getApplication<Application>()
 
-    private val _searchQuery = mutableStateOf("")
-    val searchQuery: State<String> = _searchQuery
+    private val _consultaBusqueda = mutableStateOf("")
+    val consultaBusqueda: State<String> = _consultaBusqueda
 
-    private val _searchResults = MutableStateFlow<List<SearchResult>>(emptyList())
-    val searchResults: StateFlow<List<SearchResult>> = _searchResults.asStateFlow()
+    private val _resultadosBusqueda = MutableStateFlow<List<SearchResult>>(emptyList())
+    val resultadosBusqueda: StateFlow<List<SearchResult>> = _resultadosBusqueda.asStateFlow()
 
-    private val _selectedPackage = mutableStateOf<String?>(null)
-    val selectedPackage: State<String?> = _selectedPackage
+    private val _paqueteSeleccionado = mutableStateOf<String?>(null)
+    val paqueteSeleccionado: State<String?> = _paqueteSeleccionado
 
-    private var allApps: List<AppInfo> = emptyList()
-    private var searchJob: Job? = null
+    private var todasLasApps: List<AppInfo> = emptyList()
+    private var tareaBusqueda: Job? = null
 
     init {
         viewModelScope.launch(Dispatchers.IO) {
-            repository.apps.collect { apps ->
-                allApps = apps
+            repositorio.apps.collect { apps ->
+                todasLasApps = apps
                 withContext(Dispatchers.Main) {
-                    performSearch(_searchQuery.value)
+                    realizarBusqueda(_consultaBusqueda.value)
                 }
             }
         }
     }
 
-    private fun String.normalize(): String {
+    private fun String.normalizar(): String {
         return Normalizer.normalize(this, Normalizer.Form.NFD)
             .replace("\\p{InCombiningDiacriticalMarks}+".toRegex(), "")
             .lowercase()
             .trim()
     }
 
-    fun onSearchQueryChange(query: String) {
-        _searchQuery.value = query
-        performSearch(query)
+    fun alCambiarConsultaBusqueda(nuevaConsulta: String) {
+        _consultaBusqueda.value = nuevaConsulta
+        realizarBusqueda(nuevaConsulta)
     }
 
-    private var selectionJob: Job? = null
+    private var tareaSeleccion: Job? = null
 
-    fun selectPackage(packageName: String?) {
-        selectionJob?.cancel()
-        _selectedPackage.value = packageName
+    fun seleccionarPaquete(nombrePaquete: String?) {
+        tareaSeleccion?.cancel()
+        _paqueteSeleccionado.value = nombrePaquete
         
-        if (packageName != null) {
-            selectionJob = viewModelScope.launch {
+        if (nombrePaquete != null) {
+            tareaSeleccion = viewModelScope.launch {
                 delay(5000)
-                if (_selectedPackage.value == packageName) {
-                    _selectedPackage.value = null
+                if (_paqueteSeleccionado.value == nombrePaquete) {
+                    _paqueteSeleccionado.value = null
                 }
             }
         }
     }
 
-    fun refreshApps() {
+    fun refrescarApps() {
         viewModelScope.launch(Dispatchers.IO) {
-            repository.refreshApps()
+            repositorio.refrescarApps()
         }
     }
 
-    private fun performSearch(query: String) {
-        searchJob?.cancel()
-        searchJob = viewModelScope.launch {
-            if (query.isEmpty()) {
-                val appsToShow = allApps.filter { it.packageName != context.packageName }
-                _searchResults.value = appsToShow.map { SearchResult.App(it) }
+    private fun realizarBusqueda(consulta: String) {
+        tareaBusqueda?.cancel()
+        tareaBusqueda = viewModelScope.launch {
+            if (consulta.isEmpty()) {
+                val appsAMostrar = todasLasApps.filter { it.nombrePaquete != contexto.packageName }
+                _resultadosBusqueda.value = appsAMostrar.map { SearchResult.App(it) }
                 return@launch
             }
 
-            // Debounce de 1.3 segundos para no saturar con cada letra (Evita peticiones excesivas)
-            delay(1300)
+            delay(500)
 
-            val normalizedQuery = query.normalize()
+            val consultaNormalizada = consulta.normalizar()
             
-            // 1. Apps y Contactos (Local - Rápido)
-            val filteredApps = withContext(Dispatchers.IO) {
-                allApps.filter { 
-                    it.packageName != context.packageName && 
-                    it.label.normalize().contains(normalizedQuery) 
-                }.sortedBy { it.label }
+            val appsFiltradas = withContext(Dispatchers.IO) {
+                todasLasApps.filter { 
+                    it.nombrePaquete != contexto.packageName && 
+                    it.nombre.normalizar().contains(consultaNormalizada) 
+                }.sortedBy { it.nombre }
             }
-            val contacts = withContext(Dispatchers.IO) { searchContacts(query) }
+            val contactos = withContext(Dispatchers.IO) { buscarContactos(consulta) }
             
-            val localResults = mutableListOf<SearchResult>()
-            localResults.addAll(filteredApps.map { SearchResult.App(it) })
-            localResults.addAll(contacts.map { SearchResult.Contact(it) })
-            localResults.add(SearchResult.SettingsSearch(query))
-            localResults.add(SearchResult.GoogleSearch(query))
+            val resultadosLocales = mutableListOf<SearchResult>()
+            resultadosLocales.addAll(appsFiltradas.map { SearchResult.App(it) })
+            resultadosLocales.addAll(contactos.map { SearchResult.Contact(it) })
+            resultadosLocales.add(SearchResult.SettingsSearch(consulta))
+            resultadosLocales.add(SearchResult.GoogleSearch(consulta))
             
-            // Mostramos resultados locales primero
-            _searchResults.value = localResults
+            _resultadosBusqueda.value = resultadosLocales
 
-            // 2. Sugerencias de Autocompletado (Red - Lento)
-            val suggestions = getAutocompleteSuggestions(query)
-            if (suggestions.isNotEmpty()) {
-                val allResults = mutableListOf<SearchResult>()
-                allResults.addAll(localResults)
-                allResults.addAll(suggestions.map { SearchResult.Suggestion(it) })
-                _searchResults.value = allResults
+            val sugerencias = obtenerSugerenciasAutocompletado(consulta)
+            if (sugerencias.isNotEmpty()) {
+                val todosLosResultados = mutableListOf<SearchResult>()
+                todosLosResultados.addAll(resultadosLocales)
+                todosLosResultados.addAll(sugerencias.map { SearchResult.Suggestion(it) })
+                _resultadosBusqueda.value = todosLosResultados
             }
         }
     }
 
-    private suspend fun getAutocompleteSuggestions(query: String): List<String> = withContext(Dispatchers.IO) {
+    private suspend fun obtenerSugerenciasAutocompletado(consulta: String): List<String> = withContext(Dispatchers.IO) {
         try {
-            // Usamos el cliente "chrome" o "firefox" para obtener JSON simple
-            val url = "https://suggestqueries.google.com/complete/search?client=firefox&q=${Uri.encode(query)}"
-            val connection = java.net.URL(url).openConnection() as java.net.HttpURLConnection
-            connection.setRequestProperty("User-Agent", "Mozilla/5.0")
+            val url = "https://suggestqueries.google.com/complete/search?client=firefox&q=${Uri.encode(consulta)}"
+            val conexion = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+            conexion.setRequestProperty("User-Agent", "Mozilla/5.0")
             
-            val response = connection.inputStream.bufferedReader().readText()
-            // El formato de Firefox es: ["query", ["sug1", "sug2", ...]]
-            // Usamos una limpieza manual simple para evitar dependencias de JSON pesadas
-            val jsonArrayString = response.substringAfter(",[").substringBeforeLast("]")
+            val respuesta = conexion.inputStream.bufferedReader().readText()
+            val jsonArrayString = respuesta.substringAfter(",[").substringBeforeLast("]")
             if (jsonArrayString.isEmpty()) return@withContext emptyList()
             
             jsonArrayString.split(",")
                 .map { it.trim().removeSurrounding("\"") }
-                .filter { it.isNotEmpty() && !it.equals(query, ignoreCase = true) }
+                .filter { it.isNotEmpty() && !it.equals(consulta, ignoreCase = true) }
                 .take(4)
         } catch (_: Exception) {
             emptyList()
         }
     }
 
-    private suspend fun searchContacts(query: String): List<LocalContact> {
-        // Comprobar permiso de forma silenciosa
-        if (androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.READ_CONTACTS) 
+    private suspend fun buscarContactos(consulta: String): List<LocalContact> {
+        if (androidx.core.content.ContextCompat.checkSelfPermission(contexto, android.Manifest.permission.READ_CONTACTS) 
             != android.content.pm.PackageManager.PERMISSION_GRANTED) {
             return emptyList()
         }
 
-        val results = mutableListOf<LocalContact>()
+        val resultados = mutableListOf<LocalContact>()
         val uri = ContactsContract.Contacts.CONTENT_URI
-        val projection = arrayOf(
+        val proyeccion = arrayOf(
             ContactsContract.Contacts.DISPLAY_NAME_PRIMARY,
             ContactsContract.Contacts._ID
         )
-        val selection = "${ContactsContract.Contacts.DISPLAY_NAME_PRIMARY} LIKE ?"
-        val selectionArgs = arrayOf("%$query%")
+        val seleccion = "${ContactsContract.Contacts.DISPLAY_NAME_PRIMARY} LIKE ?"
+        val argumentosSeleccion = arrayOf("%$consulta%")
 
         try {
-            context.contentResolver.query(uri, projection, selection, selectionArgs, null)?.use { cursor ->
-                val nameCol = cursor.getColumnIndex(ContactsContract.Contacts.DISPLAY_NAME_PRIMARY)
-                val idCol = cursor.getColumnIndex(ContactsContract.Contacts._ID)
+            contexto.contentResolver.query(uri, proyeccion, seleccion, argumentosSeleccion, null)?.use { cursor ->
+                val colNombre = cursor.getColumnIndex(ContactsContract.Contacts.DISPLAY_NAME_PRIMARY)
+                val colId = cursor.getColumnIndex(ContactsContract.Contacts._ID)
                 
-                var count = 0
-                while (cursor.moveToNext() && count < 10) {
-                    if (nameCol != -1 && idCol != -1) {
-                        val name = cursor.getString(nameCol) ?: "Sin nombre"
-                        val id = cursor.getLong(idCol)
-                        results.add(LocalContact(
-                            name = name,
-                            phone = "",
+                var contador = 0
+                while (cursor.moveToNext() && contador < 10) {
+                    if (colNombre != -1 && colId != -1) {
+                        val nombre = cursor.getString(colNombre) ?: "Sin nombre"
+                        val id = cursor.getLong(colId)
+                        resultados.add(LocalContact(
+                            nombre = nombre,
+                            telefono = "",
                             uri = Uri.withAppendedPath(ContactsContract.Contacts.CONTENT_URI, id.toString())
                         ))
                     }
-                    count++
+                    contador++
                 }
             }
         } catch (_: Exception) {}
-        return results
+        return resultados
     }
 }

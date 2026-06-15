@@ -16,6 +16,11 @@ import androidx.compose.ui.unit.dp
 /**
  * Componente base para los iconos circulares de la barra de estado.
  * Proporciona un diseño uniforme con fondo blanco e iconos negros.
+ *
+ * @param imageVector El icono a mostrar.
+ * @param contentDescription Descripción para accesibilidad.
+ * @param onClick Acción a ejecutar al pulsar el icono.
+ * @param isVisible Controla si el icono debe renderizarse o no.
  */
 @Composable
 fun StatusIcon(

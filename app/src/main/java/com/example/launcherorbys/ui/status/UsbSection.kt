@@ -14,61 +14,63 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Usb
 import androidx.compose.runtime.*
 
+/**
+ * Gestiona el estado y la visualización del icono de USB en la barra de estado.
+ *
+ * Escucha eventos de conexión de dispositivos USB y montaje de medios para mostrar el icono
+ * cuando hay una unidad de almacenamiento externa conectada. Al pulsar, abre el explorador de archivos.
+ *
+ * @param contexto El contexto de la aplicación.
+ */
 @Composable
-fun UsbSection(context: Context) {
-    val usbManager = remember { context.getSystemService(Context.USB_SERVICE) as UsbManager }
+fun UsbSection(contexto: Context) {
+    val gestorUsb = remember { contexto.getSystemService(Context.USB_SERVICE) as UsbManager }
 
-    // Función para verificar si hay un USB de almacenamiento realmente montado y accesible
-    fun hasExternalUsb(): Boolean {
+    fun tieneUsbExterno(): Boolean {
         return try {
-            // 1. Verificamos si hay algún dispositivo físico de almacenamiento conectado
-            val hasPhysicalStorage = usbManager.deviceList.values.any { device ->
-                // Un pendrive debe tener la clase Mass Storage (0x08) en el dispositivo o en una interfaz
-                device.deviceClass == UsbConstants.USB_CLASS_MASS_STORAGE ||
-                        (0 until device.interfaceCount).any { i ->
-                            device.getInterface(i).interfaceClass == UsbConstants.USB_CLASS_MASS_STORAGE
+            val tieneAlmacenamientoFisico = gestorUsb.deviceList.values.any { dispositivo ->
+                dispositivo.deviceClass == UsbConstants.USB_CLASS_MASS_STORAGE ||
+                        (0 until dispositivo.interfaceCount).any { i ->
+                            dispositivo.getInterface(i).interfaceClass == UsbConstants.USB_CLASS_MASS_STORAGE
                         }
             }
 
-            if (!hasPhysicalStorage) return false
+            if (!tieneAlmacenamientoFisico) return false
 
-            // 2. Si hay hardware, confirmamos que el sistema lo ha montado como volumen removible
-            val storageManager = context.getSystemService(Context.STORAGE_SERVICE) as StorageManager
-            storageManager.storageVolumes.any { it.isRemovable && it.state == Environment.MEDIA_MOUNTED }
+            val gestorAlmacenamiento = contexto.getSystemService(Context.STORAGE_SERVICE) as StorageManager
+            gestorAlmacenamiento.storageVolumes.any { it.isRemovable && it.state == Environment.MEDIA_MOUNTED }
         } catch (_: Exception) {
             false
         }
     }
 
-    var isUsbConnected by remember { mutableStateOf(hasExternalUsb()) }
+    var estaUsbConectado by remember { mutableStateOf(tieneUsbExterno()) }
 
-    DisposableEffect(context) {
-        val receiver = object : BroadcastReceiver() {
-            override fun onReceive(context: Context?, intent: Intent?) {
-                isUsbConnected = hasExternalUsb()
+    DisposableEffect(contexto) {
+        val receptor = object : BroadcastReceiver() {
+            override fun onReceive(contexto: Context?, intent: Intent?) {
+                estaUsbConectado = tieneUsbExterno()
             }
         }
 
-        // Filtro para conexión física
-        val usbFilter = IntentFilter().apply {
+        val filtroUsb = IntentFilter().apply {
             addAction(UsbManager.ACTION_USB_DEVICE_ATTACHED)
             addAction(UsbManager.ACTION_USB_DEVICE_DETACHED)
         }
 
-        // Filtro para cambios en el sistema de archivos (montaje/desmontaje)
-        val mediaFilter = IntentFilter().apply {
+        val filtroMultimedia = IntentFilter().apply {
             addAction(Intent.ACTION_MEDIA_MOUNTED)
             addAction(Intent.ACTION_MEDIA_UNMOUNTED)
             addAction(Intent.ACTION_MEDIA_REMOVED)
             addDataScheme("file")
         }
 
-        context.registerReceiver(receiver, usbFilter)
-        context.registerReceiver(receiver, mediaFilter)
+        contexto.registerReceiver(receptor, filtroUsb)
+        contexto.registerReceiver(receptor, filtroMultimedia)
 
         onDispose {
             try {
-                context.unregisterReceiver(receiver)
+                contexto.unregisterReceiver(receptor)
             } catch (_: Exception) {}
         }
     }
@@ -76,12 +78,12 @@ fun UsbSection(context: Context) {
     StatusIcon(
         imageVector = Icons.Default.Usb,
         contentDescription = "USB",
-        isVisible = isUsbConnected,
+        isVisible = estaUsbConectado,
         onClick = {
-            if (isUsbConnected) {
-                AppLauncher(context).abrirAppArchivos()
+            if (estaUsbConectado) {
+                AppLauncher(contexto).abrirAppArchivos()
             } else {
-                Toast.makeText(context, "No hay USB conectado", Toast.LENGTH_SHORT).show()
+                Toast.makeText(contexto, "No hay USB conectado", Toast.LENGTH_SHORT).show()
             }
         }
     )

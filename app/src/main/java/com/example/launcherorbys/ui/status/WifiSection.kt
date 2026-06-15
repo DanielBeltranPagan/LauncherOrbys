@@ -12,57 +12,56 @@ import com.example.launcherorbys.managers.SystemControlManager
 
 /**
  * Gestiona el estado y la visualización del icono de WiFi en la barra de estado.
- * El icono solo es visible si hay una conexión WiFi activa y funcional.
+ *
+ * Se suscribe a los cambios de red para detectar si hay una conexión WiFi activa.
+ * Al pulsar sobre el icono, se abren los ajustes de WiFi del sistema.
+ *
+ * @param contexto El contexto de la aplicación.
  */
 @Composable
-fun WifiSection(context: Context) {
-    val connectivityManager = remember { 
-        context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager 
+fun WifiSection(contexto: Context) {
+    val gestorConectividad = remember { 
+        contexto.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager 
     }
 
-    // Usamos una lista de redes WiFi activas para mayor precisión
-    val activeWifiNetworks = remember { mutableStateListOf<Network>() }
-    val isWifiConnected = activeWifiNetworks.isNotEmpty()
+    val redesWifiActivas = remember { mutableStateListOf<Network>() }
+    val estaWifiConectado = redesWifiActivas.isNotEmpty()
 
-    DisposableEffect(context) {
+    DisposableEffect(contexto) {
         val callback = object : ConnectivityManager.NetworkCallback() {
-            override fun onAvailable(network: Network) {
-                if (!activeWifiNetworks.contains(network)) {
-                    activeWifiNetworks.add(network)
+            override fun onAvailable(red: Network) {
+                if (!redesWifiActivas.contains(red)) {
+                    redesWifiActivas.add(red)
                 }
             }
 
-            override fun onLost(network: Network) {
-                activeWifiNetworks.remove(network)
+            override fun onLost(red: Network) {
+                redesWifiActivas.remove(red)
             }
 
             override fun onUnavailable() {
-                activeWifiNetworks.clear()
+                redesWifiActivas.clear()
             }
         }
 
-        // Filtramos para recibir SOLO eventos relacionados con WiFi
-        val request = NetworkRequest.Builder()
+        val solicitud = NetworkRequest.Builder()
             .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
             .build()
 
         try {
-            // Comprobación inicial: si ya hay una red WiFi activa al empezar
-            connectivityManager.activeNetwork?.let { network ->
-                val caps = connectivityManager.getNetworkCapabilities(network)
+            gestorConectividad.activeNetwork?.let { red ->
+                val caps = gestorConectividad.getNetworkCapabilities(red)
                 if (caps?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true) {
-                    activeWifiNetworks.add(network)
+                    redesWifiActivas.add(red)
                 }
             }
             
-            connectivityManager.registerNetworkCallback(request, callback)
-        } catch (e: Exception) {
-            // Fallback silencioso
-        }
+            gestorConectividad.registerNetworkCallback(solicitud, callback)
+        } catch (e: Exception) {}
 
         onDispose {
             try { 
-                connectivityManager.unregisterNetworkCallback(callback) 
+                gestorConectividad.unregisterNetworkCallback(callback) 
             } catch (e: Exception) {}
         }
     }
@@ -70,10 +69,10 @@ fun WifiSection(context: Context) {
     StatusIcon(
         imageVector = Icons.Default.Wifi,
         contentDescription = "WiFi",
-        isVisible = isWifiConnected,
+        isVisible = estaWifiConectado,
         onClick = {
-            val systemManager = SystemControlManager(context)
-            systemManager.abrirAjustesWifi()
+            val gestorSistema = SystemControlManager(contexto)
+            gestorSistema.abrirAjustesWifi()
         }
     )
 }

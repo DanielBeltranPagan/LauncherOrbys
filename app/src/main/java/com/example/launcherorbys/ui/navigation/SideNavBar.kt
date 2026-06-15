@@ -22,42 +22,40 @@ import androidx.compose.ui.unit.dp
 
 /**
  * Barra lateral táctil para navegación rápida.
- * Permite realizar acciones de navegación (Atrás, Inicio, Recientes) y controlar la visibilidad de la NavBar.
  */
 @Composable
 fun SideNavBar(
-    isLeft: Boolean,            // Indica si la barra está a la izquierda o derecha
-    onAction: (String) -> Unit, // Callback para ejecutar comandos (BACK, HOME, etc.)
-    onDrag: (Float) -> Unit,    // Maneja el desplazamiento vertical de la barra
+    isLeft: Boolean,
+    onAction: (String) -> Unit,
+    onDrag: (Float) -> Unit,
     isNavBarVisible: Boolean = true,
     isNavBarAtTop: Boolean = false,
     modifier: Modifier = Modifier,
     onHeightChanged: (Int) -> Unit = {}
 ) {
-    var isExpanded by remember { mutableStateOf(true) }
-    // Animación suave de dimensiones y posición
-    val width by animateDpAsState(targetValue = if (isExpanded) 36.dp else 12.dp, label = "width")
-    val sidePadding by animateDpAsState(targetValue = if (isExpanded) 4.dp else 0.dp, label = "padding")
+    var estaExpandida by remember { mutableStateOf(true) }
+    val ancho by animateDpAsState(targetValue = if (estaExpandida) 36.dp else 12.dp, label = "anchoNav")
+    val rellenoLateral by animateDpAsState(targetValue = if (estaExpandida) 4.dp else 0.dp, label = "rellenoNav")
     
     Box(
         modifier = modifier
             .padding(
-                start = if (isLeft) sidePadding else 0.dp,
-                end = if (!isLeft) sidePadding else 0.dp
+                start = if (isLeft) rellenoLateral else 0.dp,
+                end = if (!isLeft) rellenoLateral else 0.dp
             )
-            .width(width)
-            .heightIn(min = if (isExpanded) 160.dp else 40.dp)
+            .width(ancho)
+            .heightIn(min = if (estaExpandida) 160.dp else 40.dp)
             .systemGestureExclusion()
             .onSizeChanged { onHeightChanged(it.height) }
             .pointerInput(Unit) {
-                detectDragGestures { change, dragAmount ->
-                    change.consume()
-                    onDrag(dragAmount.y)
+                detectDragGestures { cambio, cantidadArrastre ->
+                    cambio.consume()
+                    onDrag(cantidadArrastre.y)
                 }
             }
             .background(
                 color = Color.Black.copy(alpha = 0.7f),
-                shape = if (isExpanded) {
+                shape = if (estaExpandida) {
                     RoundedCornerShape(20.dp)
                 } else {
                     if (isLeft) RoundedCornerShape(topEnd = 10.dp, bottomEnd = 10.dp)
@@ -71,50 +69,45 @@ fun SideNavBar(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            // Botón de Contraer/Expandir Sidebar
             IconButton(
-                onClick = { isExpanded = !isExpanded },
+                onClick = { estaExpandida = !estaExpandida },
                 modifier = Modifier.size(26.dp)
             ) {
                 Icon(
-                    imageVector = if (isExpanded) {
+                    imageVector = if (estaExpandida) {
                         if (isLeft) Icons.AutoMirrored.Filled.KeyboardArrowLeft else Icons.AutoMirrored.Filled.KeyboardArrowRight
                     } else {
                         if (isLeft) Icons.AutoMirrored.Filled.KeyboardArrowRight else Icons.AutoMirrored.Filled.KeyboardArrowLeft
                     },
-                    contentDescription = "Toggle Sidebar",
+                    contentDescription = "Alternar Sidebar",
                     tint = Color.White.copy(alpha = 0.5f),
                     modifier = Modifier.size(18.dp)
                 )
             }
 
-            if (isExpanded) {
-                // Botón Back
+            if (estaExpandida) {
                 IconButton(onClick = { onAction("BACK") }, modifier = Modifier.size(28.dp)) {
                     Icon(Icons.AutoMirrored.Filled.ArrowBack, "Atrás", tint = Color.White, modifier = Modifier.size(20.dp))
                 }
 
-                // Botón Home
                 IconButton(onClick = { onAction("HOME") }, modifier = Modifier.size(28.dp)) {
                     Icon(Icons.Default.Home, "Inicio", tint = Color.White, modifier = Modifier.size(20.dp))
                 }
 
-                // Botón Recents
                 IconButton(onClick = { onAction("RECENTS") }, modifier = Modifier.size(28.dp)) {
                     Icon(Icons.Default.CropSquare, "Recientes", tint = Color.White, modifier = Modifier.size(20.dp))
                 }
 
-                // Botón NavBar Toggle
                 IconButton(onClick = { onAction("TOGGLE_NAVBAR_VISIBILITY") }, modifier = Modifier.size(28.dp)) {
-                    val arrowIcon = if (isNavBarAtTop) {
+                    val iconoFlecha = if (isNavBarAtTop) {
                         if (isNavBarVisible) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown
                     } else {
                         if (isNavBarVisible) Icons.Default.KeyboardArrowDown else Icons.Default.KeyboardArrowUp
                     }
                     
                     Icon(
-                        imageVector = arrowIcon,
-                        contentDescription = "Toggle NavBar",
+                        imageVector = iconoFlecha,
+                        contentDescription = "Alternar NavBar",
                         tint = Color.White,
                         modifier = Modifier.size(24.dp)
                     )

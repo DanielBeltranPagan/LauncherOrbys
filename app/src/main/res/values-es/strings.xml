@@ -21,10 +21,6 @@
     <string name="permission_accessibility_service">Servicio de Accesibilidad</string>
     <string name="permission_accessibility_service_desc">Activar gestos y acciones rápidas</string>
 
-    <string name="dialog_audio_record_title">¿Grabar con audio?</string>
-    <string name="dialog_audio_record_desc">Se requiere acceso al micrófono para capturar sonido.</string>
-    <string name="dialog_audio_record_negative">Sin audio</string>
-
     <string name="dialog_bluetooth_title">Permiso de Bluetooth</string>
     <string name="dialog_bluetooth_desc">Se requiere permiso para gestionar conexiones inalámbricas.</string>
 

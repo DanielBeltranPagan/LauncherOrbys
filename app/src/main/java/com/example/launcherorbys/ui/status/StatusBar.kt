@@ -8,15 +8,26 @@ import androidx.compose.ui.platform.LocalContext
 import com.example.launcherorbys.ui.theme.Dimens
 
 /**
- * Barra de estado superior del Launcher.
- * Muestra iconos de conectividad (WiFi y Bluetooth) alineados a la derecha.
+ * Barra de estado superior personalizada del Launcher.
+ *
+ * Este componente es el encargado de mostrar la información de conectividad y estado del hardware
+ * de forma no intrusiva. Se alinea automáticamente a la parte superior de la pantalla y ajusta
+ * su relleno basándose en la posición de la barra de navegación del sistema.
+ *
+ * Contiene secciones para:
+ * - [UsbSection]: Estado de pendrives y almacenamiento externo.
+ * - [BluetoothSection]: Estado del adaptador y dispositivos conectados.
+ * - [WifiSection]: Conexión a redes inalámbricas.
+ *
+ * @param modifier Modificador de Compose para personalizar el diseño, dimensiones o alineación.
+ * @param alSolicitarBluetooth Función de callback invocado cuando el usuario interactúa con la sección de Bluetooth sin tener los permisos necesarios.
  */
 @Composable
 fun StatusBar(
     modifier: Modifier = Modifier,
-    onBluetoothRequest: () -> Unit
+    alSolicitarBluetooth: () -> Unit
 ) {
-    val context = LocalContext.current
+    val contexto = LocalContext.current
 
     Row(
         modifier = modifier
@@ -25,12 +36,10 @@ fun StatusBar(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(Dimens.StatusBarPaddingTop)
     ) {
-        // Empuja el contenido hacia la derecha
         Spacer(modifier = Modifier.weight(1f))
 
-        // Secciones modulares de estado
-        UsbSection(context = context)
-        BluetoothSection(context = context, onRequestPermission = onBluetoothRequest)
-        WifiSection(context = context)
+        UsbSection(contexto = contexto)
+        BluetoothSection(contexto = contexto, alSolicitarPermiso = alSolicitarBluetooth)
+        WifiSection(contexto = contexto)
     }
 }

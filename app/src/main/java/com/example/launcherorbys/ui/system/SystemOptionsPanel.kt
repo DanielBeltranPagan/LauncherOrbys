@@ -31,7 +31,6 @@ fun SystemOptionsPanel(
     onMuteClick: () -> Unit,
     onPowerClick: () -> Unit,
     onScreenshotClick: () -> Unit,
-    onRecordClick: () -> Unit,
     isWifiOn: Boolean,
     isBluetoothOn: Boolean,
     isMuted: Boolean,
@@ -100,7 +99,6 @@ fun SystemOptionsPanel(
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
                     MiniIconButton(icon = Icons.Default.Settings, onClick = onSettingsClick)
                     MiniIconButton(icon = Icons.Default.Screenshot, onClick = onScreenshotClick)
-                    MiniIconButton(icon = Icons.Default.Videocam, onClick = onRecordClick)
                 }
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
                     MiniIconButton(icon = Icons.Default.PowerSettingsNew, isDanger = true, onClick = onPowerClick)

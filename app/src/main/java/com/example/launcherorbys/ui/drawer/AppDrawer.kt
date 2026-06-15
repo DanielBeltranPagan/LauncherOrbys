@@ -12,10 +12,12 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.collectAsState
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -23,7 +25,6 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.ui.res.stringResource
 import com.example.launcherorbys.R
@@ -37,61 +38,54 @@ import kotlinx.coroutines.delay
  */
 @Composable
 fun AppDrawer(
-    onClose: () -> Unit,
+    alCerrar: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val context = LocalContext.current
-    // Forzamos que el componente observe cambios de configuración (idioma, etc)
+    val contexto = LocalContext.current
     val config = LocalConfiguration.current
     
-    // Obtenemos el ViewModel usando la factoría por defecto si es posible
-    val viewModel: AppDrawerViewModel = viewModel()
+    val modelo: AppDrawerViewModel = viewModel()
 
-    val searchQuery by viewModel.searchQuery
-    val searchResults by viewModel.searchResults.collectAsState()
-    val selectedPackage by viewModel.selectedPackage
-    val appLauncher = remember { AppLauncher(context) }
+    val consultaBusqueda by modelo.consultaBusqueda
+    val resultadosBusqueda by modelo.resultadosBusqueda.collectAsState()
+    val paqueteSeleccionado by modelo.paqueteSeleccionado
+    val lanzadorApp = remember { AppLauncher(contexto) }
 
-    // Limpiar selección y búsqueda al cerrar/desaparecer el cajón.
-    // También refrescamos las apps al abrir para asegurar etiquetas actualizadas tras cambio de idioma.
     LaunchedEffect(Unit) {
-        viewModel.refreshApps()
+        modelo.refrescarApps()
     }
 
     DisposableEffect(Unit) {
         onDispose {
-            viewModel.selectPackage(null)
-            viewModel.onSearchQueryChange("")
+            modelo.seleccionarPaquete(null)
+            modelo.alCambiarConsultaBusqueda("")
         }
     }
 
-    // Auto-deselección tras 5 segundos
-    LaunchedEffect(selectedPackage) {
-        if (selectedPackage != null) {
+    LaunchedEffect(paqueteSeleccionado) {
+        if (paqueteSeleccionado != null) {
             delay(5000)
-            viewModel.selectPackage(null)
+            modelo.seleccionarPaquete(null)
         }
     }
 
-    // Escuchar cambios en las aplicaciones instaladas
     DisposableEffect(Unit) {
-        val receiver = PackageReceiver { viewModel.refreshApps() }
-        val filter = IntentFilter().apply {
+        val receptor = PackageReceiver { modelo.refrescarApps() }
+        val filtro = IntentFilter().apply {
             addAction(Intent.ACTION_PACKAGE_ADDED)
             addAction(Intent.ACTION_PACKAGE_REMOVED)
             addAction(Intent.ACTION_PACKAGE_CHANGED)
             addDataScheme("package")
         }
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-            context.registerReceiver(receiver, filter, android.content.Context.RECEIVER_EXPORTED)
+            contexto.registerReceiver(receptor, filtro, android.content.Context.RECEIVER_EXPORTED)
         } else {
-            context.registerReceiver(receiver, filter)
+            contexto.registerReceiver(receptor, filtro)
         }
         onDispose {
             try {
-                context.unregisterReceiver(receiver)
-            } catch (_: Exception) {
-            }
+                contexto.unregisterReceiver(receptor)
+            } catch (_: Exception) {}
         }
     }
 
@@ -103,29 +97,27 @@ fun AppDrawer(
             .background(Color.Black.copy(alpha = 0.7f))
             .pointerInput(Unit) { 
                 detectTapGestures { 
-                    viewModel.selectPackage(null)
-                    onClose()
+                    modelo.seleccionarPaquete(null)
+                    alCerrar()
                 }
             }
     ) {
         Column(modifier = Modifier.padding(Dimens.PaddingSmall)) {
-            // Barra de búsqueda
-            SearchBar(
-                query = searchQuery,
-                onQueryChange = { viewModel.onSearchQueryChange(it) }
+            BarraBusqueda(
+                consulta = consultaBusqueda,
+                alCambiarConsulta = { modelo.alCambiarConsultaBusqueda(it) }
             )
             
             Spacer(modifier = Modifier.height(Dimens.PaddingMedium))
             
-            // Rejilla de resultados
-            ResultsGrid(
-                searchResults = searchResults,
-                searchQuery = searchQuery,
-                selectedPackage = selectedPackage,
-                onSelectPackage = { viewModel.selectPackage(it) },
-                onClose = onClose,
-                appLauncher = appLauncher,
-                onQueryChange = { viewModel.onSearchQueryChange(it) }
+            CuadriculaResultados(
+                resultadosBusqueda = resultadosBusqueda,
+                consultaBusqueda = consultaBusqueda,
+                paqueteSeleccionado = paqueteSeleccionado,
+                alSeleccionarPaquete = { modelo.seleccionarPaquete(it) },
+                alCerrar = alCerrar,
+                lanzadorApp = lanzadorApp,
+                alCambiarConsulta = { modelo.alCambiarConsultaBusqueda(it) }
             )
         }
     }
@@ -135,16 +127,13 @@ fun AppDrawer(
  * Componente de la barra de búsqueda interna del drawer.
  */
 @Composable
-private fun SearchBar(
-    query: String,
-    onQueryChange: (String) -> Unit
+private fun BarraBusqueda(
+    consulta: String,
+    alCambiarConsulta: (String) -> Unit
 ) {
-    // Aseguramos que el componente se invalide si cambia el idioma
-    val config = LocalConfiguration.current
-
     TextField(
-        value = query,
-        onValueChange = onQueryChange,
+        value = consulta,
+        onValueChange = alCambiarConsulta,
         modifier = Modifier.fillMaxWidth().padding(Dimens.PaddingSmall),
         placeholder = { 
             Text(
@@ -173,25 +162,24 @@ private fun SearchBar(
  * Rejilla que muestra los resultados filtrados por el motor de búsqueda.
  */
 @Composable
-private fun ResultsGrid(
-    searchResults: List<SearchResult>,
-    searchQuery: String,
-    selectedPackage: String?,
-    onSelectPackage: (String?) -> Unit,
-    onClose: () -> Unit,
-    appLauncher: AppLauncher,
-    onQueryChange: (String) -> Unit
+private fun CuadriculaResultados(
+    resultadosBusqueda: List<SearchResult>,
+    consultaBusqueda: String,
+    paqueteSeleccionado: String?,
+    alSeleccionarPaquete: (String?) -> Unit,
+    alCerrar: () -> Unit,
+    lanzadorApp: AppLauncher,
+    alCambiarConsulta: (String) -> Unit
 ) {
-    val context = LocalContext.current
-    val suggestions = searchResults.filterIsInstance<SearchResult.Suggestion>()
-    val appsList = searchResults.filterIsInstance<SearchResult.App>()
-    val contactsList = searchResults.filterIsInstance<SearchResult.Contact>()
-    val googleSearch = searchResults.filterIsInstance<SearchResult.GoogleSearch>().firstOrNull()
-    val settingsSearch = searchResults.filterIsInstance<SearchResult.SettingsSearch>().firstOrNull()
+    val contexto = LocalContext.current
+    val sugerencias = resultadosBusqueda.filterIsInstance<SearchResult.Suggestion>()
+    val listaApps = resultadosBusqueda.filterIsInstance<SearchResult.App>()
+    val listaContactos = resultadosBusqueda.filterIsInstance<SearchResult.Contact>()
+    val busquedaGoogle = resultadosBusqueda.filterIsInstance<SearchResult.GoogleSearch>().firstOrNull()
+    val busquedaAjustes = resultadosBusqueda.filterIsInstance<SearchResult.SettingsSearch>().firstOrNull()
 
-    // Calculamos qué fila está seleccionada para moverla entera (Simetría)
-    val selectedIndex = appsList.indexOfFirst { it.appInfo.packageName == selectedPackage }
-    val selectedRow = if (selectedIndex != -1) selectedIndex / 4 else -1
+    val indiceSeleccionado = listaApps.indexOfFirst { it.infoApp.nombrePaquete == paqueteSeleccionado }
+    val filaSeleccionada = if (indiceSeleccionado != -1) indiceSeleccionado / 4 else -1
 
     LazyVerticalGrid(
         columns = GridCells.Fixed(4),
@@ -199,68 +187,78 @@ private fun ResultsGrid(
         verticalArrangement = Arrangement.spacedBy(12.dp),
         horizontalArrangement = Arrangement.spacedBy(0.dp)
     ) {
-        // 1. Sección de Aplicaciones (Lo más importante arriba)
-        if (appsList.isNotEmpty()) {
-            if (searchQuery.isNotEmpty()) {
-                item(span = { GridItemSpan(maxLineSpan) }) { SectionHeader(stringResource(R.string.drawer_section_apps)) }
+        if (listaApps.isNotEmpty()) {
+            if (consultaBusqueda.isNotEmpty()) {
+                item(span = { GridItemSpan(maxLineSpan) }) { CabeceraSeccion(stringResource(R.string.drawer_section_apps)) }
             }
-            itemsIndexed(appsList) { index, result ->
-                val row = index / 4
-                AppItem(
-                    app = result.appInfo,
-                    isSelected = selectedPackage == result.appInfo.packageName,
-                    isRowSelected = row == selectedRow,
-                    onSelect = { onSelectPackage(result.appInfo.packageName) },
-                    onDismiss = { onSelectPackage(null) },
-                    onAppLaunched = onClose,
-                    appLauncher = appLauncher
+            itemsIndexed(
+                items = listaApps,
+                key = { _, resultado -> resultado.infoApp.nombrePaquete }
+            ) { indice, resultado ->
+                val fila = indice / 4
+                ItemAplicacion(
+                    app = resultado.infoApp,
+                    estaSeleccionada = paqueteSeleccionado == resultado.infoApp.nombrePaquete,
+                    estaFilaSeleccionada = fila == filaSeleccionada,
+                    alSeleccionar = { alSeleccionarPaquete(resultado.infoApp.nombrePaquete) },
+                    alDescartar = { alSeleccionarPaquete(null) },
+                    alLanzarApp = alCerrar,
+                    lanzadorApp = lanzadorApp
                 )
             }
         }
 
-        // 2. Sección de Contactos
-        if (contactsList.isNotEmpty()) {
-            item(span = { GridItemSpan(maxLineSpan) }) { SectionHeader(stringResource(R.string.drawer_section_contacts)) }
-            items(contactsList) { result ->
-                ContactItem(contact = result.contact, onClicked = onClose)
+        if (listaContactos.isNotEmpty()) {
+            item(span = { GridItemSpan(maxLineSpan) }) { CabeceraSeccion(stringResource(R.string.drawer_section_contacts)) }
+            items(
+                items = listaContactos,
+                key = { it.contacto.uri.toString() }
+            ) { resultado ->
+                ItemContacto(contacto = resultado.contacto, alHacerClic = alCerrar)
             }
         }
 
-        // 3. Sección de Búsquedas Especiales y Autocompletado
-        if (searchQuery.isNotEmpty()) {
-            item(span = { GridItemSpan(maxLineSpan) }) { SectionHeader(stringResource(R.string.drawer_section_searches)) }
+        if (consultaBusqueda.isNotEmpty()) {
+            item(span = { GridItemSpan(maxLineSpan) }) { CabeceraSeccion(stringResource(R.string.drawer_section_searches)) }
             
-            // 3.1. Buscar en Ajustes (Local)
-            if (settingsSearch != null) {
-                item(span = { GridItemSpan(maxLineSpan) }) { 
-                    SettingsSearchItem(query = settingsSearch.query, onClicked = onClose) 
+            if (busquedaAjustes != null) {
+                item(
+                    span = { GridItemSpan(maxLineSpan) },
+                    key = "search_settings"
+                ) { 
+                    ItemBusquedaAjustes(consulta = busquedaAjustes.consulta, alHacerClic = alCerrar) 
                 }
             }
 
-            // 3.2. Buscar en Google (Web)
-            if (googleSearch != null) {
-                item(span = { GridItemSpan(maxLineSpan) }) { 
-                    GoogleSearchItem(query = googleSearch.query, onClicked = onClose) 
+            if (busquedaGoogle != null) {
+                item(
+                    span = { GridItemSpan(maxLineSpan) },
+                    key = "search_google"
+                ) { 
+                    ItemBusquedaGoogle(consulta = busquedaGoogle.consulta, alHacerClic = alCerrar) 
                 }
             }
 
-            // 3.3. Sugerencias de Autocompletado de Google (Debajo del todo)
-            if (suggestions.isNotEmpty()) {
-                item(span = { GridItemSpan(maxLineSpan) }) { SectionHeader(stringResource(R.string.drawer_section_suggestions)) }
-                items(suggestions, span = { GridItemSpan(maxLineSpan) }) { sug ->
-                    SuggestionItem(
-                        text = sug.text, 
-                        onSearch = { query ->
+            if (sugerencias.isNotEmpty()) {
+                item(span = { GridItemSpan(maxLineSpan) }) { CabeceraSeccion(stringResource(R.string.drawer_section_suggestions)) }
+                items(
+                    items = sugerencias,
+                    key = { "sug_${it.texto}" },
+                    span = { GridItemSpan(maxLineSpan) }
+                ) { sug ->
+                    ItemSugerencia(
+                        texto = sug.texto, 
+                        alBuscar = { consulta ->
                             try {
                                 val intent = Intent(Intent.ACTION_WEB_SEARCH).apply {
-                                    putExtra("query", query)
+                                    putExtra("query", consulta)
                                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                                 }
-                                context.startActivity(intent)
-                                onClose()
+                                contexto.startActivity(intent)
+                                alCerrar()
                             } catch (_: Exception) {}
                         },
-                        onAutocomplete = { onQueryChange(it) }
+                        alAutocompletar = { alCambiarConsulta(it) }
                     )
                 }
             }

@@ -4,6 +4,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.util.Log
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
@@ -22,9 +23,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
@@ -32,8 +31,6 @@ import java.util.*
 
 /**
  * Barra de navegación personalizada del launcher.
- * Incluye controles de navegación del sistema, accesos rápidos y un reloj.
- * Puede contraerse a un tirador central de mayor tamaño.
  */
 @Composable
 fun NavBar(
@@ -44,103 +41,97 @@ fun NavBar(
     isExpanded: Boolean = true,
     clockAtLeft: Boolean = true
 ) {
-    val context = LocalContext.current
-    val configuration = LocalConfiguration.current
+    val contexto = LocalContext.current
+    val configuracion = LocalConfiguration.current
     
-    val height by animateDpAsState(targetValue = if (isExpanded) 48.dp else 0.dp, label = "navHeight")
-    val contentAlpha by animateFloatAsState(targetValue = if (isExpanded) 1f else 0f, label = "contentAlpha")
+    val altura by animateDpAsState(targetValue = if (isExpanded) 48.dp else 0.dp, label = "alturaNav")
+    val alfaContenido by animateFloatAsState(targetValue = if (isExpanded) 1f else 0f, label = "alfaContenido")
     
-    var controlsExpanded by remember { mutableStateOf(false) }
+    var controlesExpandidos by remember { mutableStateOf(false) }
 
-    // Control de debounce para evitar spam de peticiones (1.3 segundos)
-    var lastClickTime by remember { mutableLongStateOf(0L) }
-    val debouncedAction: (String) -> Unit = { action ->
-        val now = System.currentTimeMillis()
-        if (now - lastClickTime >= 1300L) {
-            lastClickTime = now
-            onActionClicked(action)
+    var ultimoTiempoClic by remember { mutableLongStateOf(0L) }
+    val accionConDebounce: (String) -> Unit = { accion ->
+        val ahora = System.currentTimeMillis()
+        // El delay de 0.5s solo se aplica al botón de Apps para evitar rebotes
+        if (accion == "APPS") {
+            Log.d("click","CLICK X A")
+            if (ahora - ultimoTiempoClic >= 2000L) {
+                Log.d("click","TIEMPO VALIDO: $ultimoTiempoClic")
+                ultimoTiempoClic = ahora
+                onActionClicked(accion)
+            }
+        } else {
+            // Los demás botones son instantáneos
+            onActionClicked(accion)
         }
     }
 
-    val toggleControls = {
-        val now = System.currentTimeMillis()
-        if (now - lastClickTime >= 1300L) {
-            lastClickTime = now
-            controlsExpanded = !controlsExpanded
-        }
+    val alternarControles = {
+        controlesExpandidos = !controlesExpandidos
     }
 
-    // Auto-cierre del menú de controles tras 5 segundos o si la navbar se oculta
-    LaunchedEffect(controlsExpanded, isExpanded) {
+    LaunchedEffect(controlesExpandidos, isExpanded) {
         if (!isExpanded) {
-            controlsExpanded = false
-        } else if (controlsExpanded) {
+            controlesExpandidos = false
+        } else if (controlesExpandidos) {
             delay(5000)
-            controlsExpanded = false
+            controlesExpandidos = false
         }
     }
 
-    var currentTime by remember { 
-        mutableStateOf("") 
+    var horaActual by remember { mutableStateOf("") }
+
+    val actualizarHora = {
+        val formato24Horas = android.text.format.DateFormat.is24HourFormat(contexto)
+        val patron = if (formato24Horas) "HH:mm" else "h:mm a"
+        val formatoFecha = SimpleDateFormat(patron, configuracion.locales[0])
+        formatoFecha.calendar = Calendar.getInstance()
+        horaActual = formatoFecha.format(Date())
     }
 
-    // Función para obtener la hora formateada respetando los ajustes del sistema (12h/24h)
-    val updateTime = {
-        val is24Hour = android.text.format.DateFormat.is24HourFormat(context)
-        val pattern = if (is24Hour) "HH:mm" else "h:mm a"
-        val sdf = SimpleDateFormat(pattern, configuration.locales[0])
-        // Forzamos al calendario a obtener la zona horaria actual del sistema
-        sdf.calendar = Calendar.getInstance()
-        currentTime = sdf.format(Date())
-    }
-
-    // Sincronización con la hora del sistema y cambios de zona horaria/región
-    DisposableEffect(context, configuration.locales[0]) {
-        val receiver = object : BroadcastReceiver() {
-            override fun onReceive(context: Context?, intent: Intent?) {
-                updateTime()
+    DisposableEffect(contexto, configuracion.locales[0]) {
+        val receptor = object : BroadcastReceiver() {
+            override fun onReceive(contexto: Context?, intent: Intent?) {
+                actualizarHora()
             }
         }
-        val filter = IntentFilter().apply {
+        val filtro = IntentFilter().apply {
             addAction(Intent.ACTION_TIME_TICK)
             addAction(Intent.ACTION_TIME_CHANGED)
             addAction(Intent.ACTION_TIMEZONE_CHANGED)
             addAction(Intent.ACTION_LOCALE_CHANGED)
         }
         
-        ContextCompat.registerReceiver(context, receiver, filter, ContextCompat.RECEIVER_EXPORTED)
-        updateTime()
+        ContextCompat.registerReceiver(contexto, receptor, filtro, ContextCompat.RECEIVER_EXPORTED)
+        actualizarHora()
         
         onDispose {
-            try { context.unregisterReceiver(receiver) } catch (_: Exception) {}
+            try { contexto.unregisterReceiver(receptor) } catch (_: Exception) {}
         }
     }
 
-    // Loop de respaldo para asegurar que la hora se actualice incluso si los eventos fallan
-    LaunchedEffect(configuration.locales[0]) {
+    LaunchedEffect(configuracion.locales[0]) {
         while (true) {
-            updateTime()
-            delay(10000) // Actualizar cada 10 segundos es suficiente para HH:mm
+            actualizarHora()
+            delay(10000)
         }
     }
 
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(height)
+            .height(altura)
             .systemGestureExclusion(),
         contentAlignment = if (isAtTop) Alignment.TopCenter else Alignment.BottomCenter
     ) {
-        // Fondo principal
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .alpha(contentAlpha)
+                .alpha(alfaContenido)
                 .background(color = backgroundColor.copy(alpha = 0.95f))
         )
 
         if (isExpanded) {
-            // Capa para los Iconos Centrales (Perfectamente centrados en pantalla)
             Box(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center
@@ -149,60 +140,57 @@ fun NavBar(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.Center
                 ) {
-                    NavBarIcon(Icons.AutoMirrored.Filled.ArrowBack, iconColor) { debouncedAction("BACK") }
+                    IconoNavBar(Icons.AutoMirrored.Filled.ArrowBack, iconColor) { accionConDebounce("BACK") }
                     Spacer(modifier = Modifier.width(16.dp))
-                    NavBarIcon(Icons.Default.Home, iconColor) { debouncedAction("HOME") }
+                    IconoNavBar(Icons.Default.Home, iconColor) { accionConDebounce("HOME") }
                     Spacer(modifier = Modifier.width(16.dp))
-                    NavBarIcon(Icons.Default.CropSquare, iconColor) { debouncedAction("RECENTS") }
+                    IconoNavBar(Icons.Default.CropSquare, iconColor) { accionConDebounce("RECENTS") }
                     Spacer(modifier = Modifier.width(16.dp))
-                    NavBarIcon(Icons.Default.Apps, iconColor) { debouncedAction("APPS") }
+                    IconoNavBar(Icons.Default.Apps, iconColor) { accionConDebounce("APPS") }
                     Spacer(modifier = Modifier.width(16.dp))
-                    NavBarIcon(Icons.Default.Language, iconColor) { debouncedAction("GOOGLE") }
+                    IconoNavBar(Icons.Default.Language, iconColor) { accionConDebounce("GOOGLE") }
                     Spacer(modifier = Modifier.width(16.dp))
-                    NavBarIcon(Icons.Default.Folder, iconColor) { debouncedAction("FILES") }
+                    IconoNavBar(Icons.Default.Folder, iconColor) { accionConDebounce("FILES") }
                     Spacer(modifier = Modifier.width(16.dp))
-                    NavBarIcon(Icons.Default.Tune, iconColor) { debouncedAction("SYSTEM_OPTIONS") }
+                    IconoNavBar(Icons.Default.Tune, iconColor) { accionConDebounce("SYSTEM_OPTIONS") }
                 }
             }
 
-            // Capa para los componentes laterales (Reloj y Controles)
             Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(horizontal = 16.dp)
             ) {
-                // Definimos los componentes
-                val clockComponent = @Composable {
+                val componenteReloj = @Composable {
                     Text(
-                        text = currentTime,
+                        text = horaActual,
                         color = iconColor,
                         style = MaterialTheme.typography.titleSmall,
-                        modifier = Modifier.clickable { debouncedAction("CLOCK") }
+                        modifier = Modifier.clickable { accionConDebounce("CLOCK") }
                     )
                 }
 
-                val controlsComponent = @Composable {
+                val componenteControles = @Composable {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        if (controlsExpanded) {
-                            NavBarIcon(Icons.Default.SwapVert, iconColor) { debouncedAction("TOGGLE_NAVBAR_POSITION") }
+                        if (controlesExpandidos) {
+                            IconoNavBar(Icons.Default.SwapVert, iconColor) { accionConDebounce("TOGGLE_NAVBAR_POSITION") }
                             Spacer(modifier = Modifier.width(8.dp))
-                            NavBarIcon(Icons.Default.SwapHoriz, iconColor) { debouncedAction("TOGGLE_CLOCK_SIDE") }
+                            IconoNavBar(Icons.Default.SwapHoriz, iconColor) { accionConDebounce("TOGGLE_CLOCK_SIDE") }
                             Spacer(modifier = Modifier.width(8.dp))
                         }
-                        NavBarIcon(
-                            icon = if (controlsExpanded) Icons.Default.Close else Icons.Default.OpenWith,
-                            color = iconColor.copy(alpha = if (controlsExpanded) 0.5f else 1f)
-                        ) { toggleControls() }
+                        IconoNavBar(
+                            icon = if (controlesExpandidos) Icons.Default.Close else Icons.Default.OpenWith,
+                            color = iconColor.copy(alpha = if (controlesExpandidos) 0.5f else 1f)
+                        ) { alternarControles() }
                     }
                 }
 
-                // Posicionamiento absoluto a los lados
                 Box(modifier = Modifier.align(Alignment.CenterStart)) {
-                    if (clockAtLeft) clockComponent() else controlsComponent()
+                    if (clockAtLeft) componenteReloj() else componenteControles()
                 }
 
                 Box(modifier = Modifier.align(Alignment.CenterEnd)) {
-                    if (clockAtLeft) controlsComponent() else clockComponent()
+                    if (clockAtLeft) componenteControles() else componenteReloj()
                 }
             }
         }
@@ -210,7 +198,7 @@ fun NavBar(
 }
 
 @Composable
-private fun NavBarIcon(
+private fun IconoNavBar(
     icon: ImageVector,
     color: Color,
     onClick: () -> Unit

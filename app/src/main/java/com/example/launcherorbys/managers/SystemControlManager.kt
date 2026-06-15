@@ -16,23 +16,33 @@ import androidx.compose.runtime.setValue
 /**
  * Controlador de hardware y configuraciones globales del sistema.
  * Expone estados observables de Compose para que la UI se actualice automáticamente.
+ * 
+ * Gestiona el volumen, brillo, conectividad (WiFi/Bluetooth) y acceso a paneles de ajustes.
+ * 
+ * @param contexto El contexto de la aplicación, utilizado para acceder a servicios del sistema y lanzar Intents.
  */
-class SystemControlManager(private val context: Context) {
+class SystemControlManager(private val contexto: Context) {
     
-    private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-    private val contentResolver = context.contentResolver
+    private val gestorAudio = contexto.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+    private val resolvedorContenido = contexto.contentResolver
 
     // --- Estados Observables del Sistema ---
-    var currentBrightness by mutableStateOf(0.5f)
-    var isAutoBrightness by mutableStateOf(false)
-    var isAirplaneModeOn by mutableStateOf(false)
-    var isWifiOn by mutableStateOf(false)
-    var isBluetoothOn by mutableStateOf(false)
-    var isMuted by mutableStateOf(false)
-    var currentVolume by mutableStateOf(0.5f)
+    /** Nivel de brillo actual normalizado (0.0f a 1.0f). */
+    var brilloActual by mutableStateOf(0.5f)
+    /** Indica si el brillo automático está habilitado en el sistema. */
+    var esBrilloAutomatico by mutableStateOf(false)
+    /** Indica si el WiFi está habilitado actualmente. */
+    var estaWifiActivado by mutableStateOf(false)
+    /** Indica si el Bluetooth está habilitado actualmente. */
+    var estaBluetoothActivado by mutableStateOf(false)
+    /** Indica si la salida de audio multimedia está silenciada. */
+    var estaSilenciado by mutableStateOf(false)
+    /** Nivel de volumen actual normalizado (0.0f a 1.0f). */
+    var volumenActual by mutableStateOf(0.5f)
 
     /**
      * Sincroniza las propiedades observables con los valores reales del hardware.
+     * Lee el estado actual de volumen, brillo y conectividad.
      */
     fun actualizarValoresSistema() {
         actualizarVolumen()
@@ -41,121 +51,101 @@ class SystemControlManager(private val context: Context) {
     }
 
     private fun actualizarVolumen() {
-        val maxVol = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
-        if (maxVol > 0) {
-            currentVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC).toFloat() / maxVol
+        val volMax = gestorAudio.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+        if (volMax > 0) {
+            volumenActual = gestorAudio.getStreamVolume(AudioManager.STREAM_MUSIC).toFloat() / volMax
         }
-        isMuted = audioManager.isStreamMute(AudioManager.STREAM_MUSIC)
+        estaSilenciado = gestorAudio.isStreamMute(AudioManager.STREAM_MUSIC)
     }
 
     private fun actualizarBrillo() {
         try {
-            val brightnessValue = Settings.System.getInt(contentResolver, Settings.System.SCREEN_BRIGHTNESS)
-            currentBrightness = brightnessValue / 255f
-            val mode = Settings.System.getInt(contentResolver, Settings.System.SCREEN_BRIGHTNESS_MODE)
-            isAutoBrightness = (mode == Settings.System.SCREEN_BRIGHTNESS_MODE_AUTOMATIC)
+            val valorBrillo = Settings.System.getInt(resolvedorContenido, Settings.System.SCREEN_BRIGHTNESS)
+            brilloActual = valorBrillo / 255f
+            val modo = Settings.System.getInt(resolvedorContenido, Settings.System.SCREEN_BRIGHTNESS_MODE)
+            esBrilloAutomatico = (modo == Settings.System.SCREEN_BRIGHTNESS_MODE_AUTOMATIC)
         } catch (e: Exception) {}
     }
 
     private fun actualizarConectividad() {
-        isAirplaneModeOn = Settings.Global.getInt(contentResolver, Settings.Global.AIRPLANE_MODE_ON, 0) != 0
-        
         // WiFi
         try {
-            val wm = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as? android.net.wifi.WifiManager
-            isWifiOn = wm?.isWifiEnabled == true
+            val wm = contexto.applicationContext.getSystemService(Context.WIFI_SERVICE) as? android.net.wifi.WifiManager
+            estaWifiActivado = wm?.isWifiEnabled == true
         } catch (e: Exception) {
-            isWifiOn = false
+            estaWifiActivado = false
         }
         
-        // Bluetooth - Manejo seguro de permisos
+        // Bluetooth
         try {
-            val bm = context.getSystemService(Context.BLUETOOTH_SERVICE) as? android.bluetooth.BluetoothManager
-            val adapter = bm?.adapter
-            if (adapter != null) {
-                val hasPermission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                    context.checkSelfPermission(android.Manifest.permission.BLUETOOTH_CONNECT) == android.content.pm.PackageManager.PERMISSION_GRANTED
+            val bm = contexto.getSystemService(Context.BLUETOOTH_SERVICE) as? android.bluetooth.BluetoothManager
+            val adaptador = bm?.adapter
+            if (adaptador != null) {
+                val tienePermiso = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    contexto.checkSelfPermission(android.Manifest.permission.BLUETOOTH_CONNECT) == android.content.pm.PackageManager.PERMISSION_GRANTED
                 } else true
                 
-                isBluetoothOn = if (hasPermission) {
-                    adapter.isEnabled
+                estaBluetoothActivado = if (tienePermiso) {
+                    adaptador.isEnabled
                 } else {
-                    // Si no hay permiso, no podemos saberlo con certeza, devolvemos false para evitar crash
                     false
                 }
             } else {
-                isBluetoothOn = false
+                estaBluetoothActivado = false
             }
         } catch (e: Exception) {
-            isBluetoothOn = false
+            estaBluetoothActivado = false
         }
     }
 
-    /**
-     * Intenta alternar el estado del Bluetooth.
-     * En Android 13+ el toggle directo suele estar restringido, por lo que abrirá ajustes si falla.
-     */
-    fun toggleBluetooth() {
-        // Forzamos siempre la apertura de los ajustes para evitar el aviso de "120 segundos"
-        // y porque en Android moderno el toggle directo falla casi siempre.
-        abrirSwitchBarBT()
+    fun alternarBluetooth() {
+        abrirPanelBluetooth()
     }
 
     fun cambiarBrillo(valor: Float) {
-        if (Settings.System.canWrite(context)) {
+        if (Settings.System.canWrite(contexto)) {
             val intBrillo = (valor * 255).toInt().coerceIn(0, 255)
-            Settings.System.putInt(contentResolver, Settings.System.SCREEN_BRIGHTNESS, intBrillo)
-            currentBrightness = valor
+            Settings.System.putInt(resolvedorContenido, Settings.System.SCREEN_BRIGHTNESS, intBrillo)
+            brilloActual = valor
         } else {
             solicitarPermisoEscritura()
         }
     }
 
-    /**
-     * Alterna entre brillo automático y manual.
-     */
-    fun cambiarModoBrillo(auto: Boolean) {
-        if (Settings.System.canWrite(context)) {
-            val modo = if (auto) Settings.System.SCREEN_BRIGHTNESS_MODE_AUTOMATIC else Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL
-            Settings.System.putInt(contentResolver, Settings.System.SCREEN_BRIGHTNESS_MODE, modo)
-            isAutoBrightness = auto
+    fun cambiarModoBrillo(automatico: Boolean) {
+        if (Settings.System.canWrite(contexto)) {
+            val modo = if (automatico) Settings.System.SCREEN_BRIGHTNESS_MODE_AUTOMATIC else Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL
+            Settings.System.putInt(resolvedorContenido, Settings.System.SCREEN_BRIGHTNESS_MODE, modo)
+            esBrilloAutomatico = automatico
         } else {
             solicitarPermisoEscritura()
         }
     }
 
-    /**
-     * Ajusta el volumen de la música.
-     */
     fun cambiarVolumen(valor: Float) {
-        val maxVol = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
-        val newVol = (valor * maxVol).toInt().coerceIn(0, maxVol)
-        audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, newVol, 0)
-        currentVolume = valor
-        if (valor > 0f) isMuted = false
+        val volMax = gestorAudio.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+        val nuevoVol = (valor * volMax).toInt().coerceIn(0, volMax)
+        gestorAudio.setStreamVolume(AudioManager.STREAM_MUSIC, nuevoVol, 0)
+        volumenActual = valor
+        if (valor > 0f) estaSilenciado = false
     }
 
-    /**
-     * Alterna el estado de silencio.
-     */
-    fun toggleMute() {
-        isMuted = !isMuted
-        val action = if (isMuted) AudioManager.ADJUST_MUTE else AudioManager.ADJUST_UNMUTE
-        audioManager.adjustStreamVolume(AudioManager.STREAM_MUSIC, action, 0)
+    fun alternarSilencio() {
+        estaSilenciado = !estaSilenciado
+        val accion = if (estaSilenciado) AudioManager.ADJUST_MUTE else AudioManager.ADJUST_UNMUTE
+        gestorAudio.adjustStreamVolume(AudioManager.STREAM_MUSIC, accion, 0)
     }
 
-    // --- Métodos de Apertura de Ajustes ---
-
-    fun launchSettings(action: String) {
+    fun lanzarAjustes(accion: String) {
         try {
-            val intent = Intent(action).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            context.startActivity(intent)
+            val intent = Intent(accion).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            contexto.startActivity(intent)
         } catch (e: Exception) {
             abrirAjustesFallback()
         }
     }
 
-    fun abrirAjustesBT() {
+    fun abrirAjustesBluetooth() {
         try {
             val intent = Intent().apply {
                 component = ComponentName(
@@ -164,33 +154,32 @@ class SystemControlManager(private val context: Context) {
                 )
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
-            context.startActivity(intent)
+            contexto.startActivity(intent)
         } catch (e: Exception) {
-            abrirAjustesBT() // Llama a la opción 1 si rompe por temas de permisos
+            // Intentar abrir ajustes generales de BT
+            try {
+                val intent = Intent(Settings.ACTION_BLUETOOTH_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                contexto.startActivity(intent)
+            } catch (e2: Exception) {
+                abrirAjustesFallback()
+            }
         }
     }
 
-    /**
-     * Abre el panel de control de Bluetooth (disponible desde Android 10+).
-     * Si falla, intenta el panel de conectividad general antes de ir a ajustes completos.
-     */
-    fun abrirSwitchBarBT() {
+    fun abrirPanelBluetooth() {
         try {
-            // Intentamos el panel flotante específico de Bluetooth (Android 10+)
             val intent = Intent("android.settings.panel.action.BLUETOOTH").apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
-            context.startActivity(intent)
+            contexto.startActivity(intent)
         } catch (e: Exception) {
             try {
-                // Si el panel de BT no existe, intentamos el de conectividad (Android 12+)
                 val intent = Intent("android.settings.panel.action.INTERNET_CONNECTIVITY").apply {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
-                context.startActivity(intent)
+                contexto.startActivity(intent)
             } catch (e2: Exception) {
-                // Si nada funciona, vamos a la pantalla de ajustes con los extras de fragmento
-                abrirAjustesBT()
+                abrirAjustesBluetooth()
             }
         }
     }
@@ -201,13 +190,13 @@ class SystemControlManager(private val context: Context) {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
             }
-            context.startActivity(intent)
+            contexto.startActivity(intent)
         } catch (e: Exception) {
             try {
                 val intent = Intent(Settings.ACTION_WIRELESS_SETTINGS).apply {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
-                context.startActivity(intent)
+                contexto.startActivity(intent)
             } catch (e2: Exception) {
                 abrirAjustesFallback()
             }
@@ -215,21 +204,20 @@ class SystemControlManager(private val context: Context) {
     }
 
     private fun abrirAjustesFallback() {
-        val intent = context.packageManager.getLaunchIntentForPackage("com.android.settings")
-        if (intent != null) context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        val intent = contexto.packageManager.getLaunchIntentForPackage("com.android.settings")
+        if (intent != null) contexto.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     }
 
     private fun solicitarPermisoEscritura() {
-        val intent = Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS, Uri.parse("package:${context.packageName}"))
-        context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-        // Mostramos un mensaje genérico o usamos el contexto para obtener el string
+        val intent = Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS, Uri.parse("package:${contexto.packageName}"))
+        contexto.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         try {
-            val msg = context.getString(com.example.launcherorbys.R.string.permission_system_settings_desc)
-            toast(msg)
+            val mensaje = contexto.getString(com.example.launcherorbys.R.string.permission_system_settings_desc)
+            mostrarMensaje(mensaje)
         } catch (_: Exception) {
-            toast("Concede permiso para cambiar el brillo")
+            mostrarMensaje("Concede permiso para cambiar el brillo")
         }
     }
 
-    private fun toast(m: String) = Toast.makeText(context, m, Toast.LENGTH_SHORT).show()
+    private fun mostrarMensaje(m: String) = Toast.makeText(contexto, m, Toast.LENGTH_SHORT).show()
 }

@@ -8,152 +8,117 @@ import android.widget.Toast
 
 /**
  * Gestor centralizado para el lanzamiento de aplicaciones y utilidades externas.
- * Evita la dispersión de Intents de apertura por toda la interfaz de usuario.
+ *
+ * Esta clase centraliza la creación de [Intent] para abrir aplicaciones instaladas,
+ * sitios web, el explorador de archivos y el reloj del sistema. Al usar esta clase,
+ * se asegura una gestión consistente de flags como [Intent.FLAG_ACTIVITY_NEW_TASK]
+ * y un manejo de errores (fallbacks) unificado.
+ *
+ * @property contexto El contexto de la aplicación necesario para interactuar con el PackageManager y lanzar actividades.
  */
-class AppLauncher(private val context: Context) {
-
-    private val prefs = context.getSharedPreferences("launcher_prefs", Context.MODE_PRIVATE)
+class AppLauncher(private val contexto: Context) {
 
     /**
-     * Lanza una aplicación por su nombre de paquete y la registra como la última abierta.
+     * Lanza una aplicación instalada utilizando su nombre de paquete único.
+     *
+     * Si el paquete no tiene una actividad de inicio (Launcher intent) o no está instalado,
+     * se muestra un mensaje informativo al usuario mediante un Toast.
+     *
+     * @param nombrePaquete El ID del paquete de la aplicación (ej: "com.android.settings").
      */
-    fun lanzarApp(packageName: String) {
-        val intent = context.packageManager.getLaunchIntentForPackage(packageName)
+    fun lanzarApp(nombrePaquete: String) {
+        val intent = contexto.packageManager.getLaunchIntentForPackage(nombrePaquete)
         if (intent != null) {
             try {
+                // Se añade NO_ANIMATION para una transición instantánea típica de launchers ligeros
                 intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION)
-                context.startActivity(intent)
-                // Guardar como última app
-                prefs.edit().putString("last_opened_package", packageName).apply()
+                contexto.startActivity(intent)
             } catch (e: Exception) {
-                toast("No se pudo abrir la aplicación")
+                mostrarMensaje("No se pudo abrir la aplicación")
             }
         } else {
-            toast("Aplicación no encontrada")
+            mostrarMensaje("Aplicación no encontrada")
         }
     }
 
     /**
-     * Obtiene el nombre del paquete de la última aplicación abierta.
-     */
-    fun obtenerUltimaApp(): String? {
-        return prefs.getString("last_opened_package", null)
-    }
-
-    /**
-     * Obtiene la información básica de la última aplicación abierta.
-     */
-    fun obtenerInfoUltimaApp(): Pair<String, android.graphics.drawable.Drawable?>? {
-        val pkg = obtenerUltimaApp() ?: return null
-        return try {
-            val appInfo = context.packageManager.getApplicationInfo(pkg, 0)
-            val label = context.packageManager.getApplicationLabel(appInfo).toString()
-            val icon = context.packageManager.getApplicationIcon(pkg)
-            Pair(label, icon)
-        } catch (e: Exception) {
-            null
-        }
-    }
-
-    /**
-     * Abre un sitio web en el navegador del sistema.
+     * Abre un sitio web o enlace profundo en el navegador predeterminado del sistema.
+     *
+     * @param url La dirección web completa (debe incluir el esquema, ej: "https://...").
      */
     fun abrirUrl(url: String) {
         try {
             val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
-            context.startActivity(intent)
+            contexto.startActivity(intent)
         } catch (e: Exception) {
-            toast("No hay navegador instalado")
+            mostrarMensaje("No hay navegador instalado")
         }
     }
 
     /**
-     * Abre el explorador de archivos del sistema buscando los paquetes más comunes.
+     * Intenta abrir el explorador de archivos del sistema.
+     *
+     * Realiza una búsqueda secuencial de paquetes comunes (`documentsui`) y, en caso de fallo,
+     * utiliza un Intent genérico [Intent.ACTION_GET_CONTENT] como último recurso.
      */
     fun abrirAppArchivos() {
-        val intent = context.packageManager.getLaunchIntentForPackage("com.google.android.documentsui")
-            ?: context.packageManager.getLaunchIntentForPackage("com.android.documentsui")
+        val intent = contexto.packageManager.getLaunchIntentForPackage("com.google.android.documentsui")
+            ?: contexto.packageManager.getLaunchIntentForPackage("com.android.documentsui")
             ?: Intent(Intent.ACTION_VIEW).apply {
                 type = "vnd.android.cursor.dir/file"
                 addCategory(Intent.CATEGORY_DEFAULT)
             }
 
         try {
-            context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            contexto.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         } catch (e: Exception) {
             try {
                 val fallback = Intent(Intent.ACTION_GET_CONTENT).apply {
                     type = "*/*"
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
-                context.startActivity(fallback)
+                contexto.startActivity(fallback)
             } catch (e2: Exception) {
-                toast("No se encontró explorador de archivos")
+                mostrarMensaje("No se encontró explorador de archivos")
             }
         }
     }
 
     /**
-     * Envía una señal interna para que MainActivity inicie el flujo de grabación de pantalla.
-     */
-
-    fun iniciarGrabacionEstandar() {
-        val intent = Intent("com.example.launcherorbys.START_SCREEN_RECORD").apply {
-            setPackage(context.packageName)
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        }
-        context.startActivity(intent)
-    }
-
-    /**
-     * Intenta abrir el grabador de pantalla nativo del sistema.
-     */
-    fun abrirGrabadorPantalla(): Boolean {
-        val intents = listOf(
-            Intent().setClassName("com.android.systemui", "com.android.systemui.screenrecord.ScreenRecordDialog"),
-            Intent().setClassName("com.android.systemui", "com.android.systemui.screenrecord.ScreenRecordActivity"),
-            Intent("com.android.systemui.screenrecord.START")
-        )
-
-        for (intent in intents) { 
-            try {
-                context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-                return true
-            } catch (e: Exception) {}
-        }
-        return false
-    }
-
-    /**
-     * Intenta abrir la aplicación de alarma/reloj del sistema.
+     * Intenta abrir la aplicación de alarma o reloj del sistema buscando entre fabricantes conocidos.
+     *
+     * Recorre una lista de paquetes habituales (Google, Samsung, Huawei) y si ninguno existe,
+     * utiliza la acción estándar [AlarmClock.ACTION_SHOW_ALARMS].
+     *
+     * @return `true` si se logró lanzar alguna actividad de reloj; `false` si no fue posible.
      */
     fun abrirRelojSistema(): Boolean {
-        val paquetes = listOf(
+        val paquetesReloj = listOf(
             "com.google.android.deskclock",
             "com.android.deskclock",
             "com.sec.android.app.clockpackage",
             "com.huawei.deskclock"
         )
 
-        for (pkg in paquetes) {
-            val intent = context.packageManager.getLaunchIntentForPackage(pkg)
+        for (paquete in paquetesReloj) {
+            val intent = contexto.packageManager.getLaunchIntentForPackage(paquete)
             if (intent != null) {
                 try {
-                    context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                    contexto.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                     return true
                 } catch (e: Exception) {}
             }
         }
 
         return try {
-            context.startActivity(Intent(AlarmClock.ACTION_SHOW_ALARMS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            contexto.startActivity(Intent(AlarmClock.ACTION_SHOW_ALARMS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
             true
         } catch (e: Exception) {
             false
         }
     }
 
-    private fun toast(m: String) = Toast.makeText(context, m, Toast.LENGTH_SHORT).show()
+    private fun mostrarMensaje(mensaje: String) = Toast.makeText(contexto, mensaje, Toast.LENGTH_SHORT).show()
 }

@@ -18,106 +18,109 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 /**
- * ViewModel central de la aplicación.
- * Gestiona el estado global (fondo, tema) y la sincronización de permisos críticos.
+ * ViewModel central de la aplicación Launcher Orbys.
+ *
+ * Actúa como la "fuente de verdad" para el estado de la UI global, incluyendo la apariencia
+ * (temas, fondos) y el estado de los permisos críticos del sistema.
+ *
+ * Utiliza [SettingsRepository] para la persistencia de datos y [PermissionManager] para
+ * validar el acceso a funciones restringidas de Android.
+ *
+ * @param application Referencia a la aplicación para el acceso a recursos y servicios del sistema.
  */
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     
-    private val permissionManager = PermissionManager(application)
-    private val settingsRepository = SettingsRepository(application)
+    private val gestorPermisos = PermissionManager(application)
+    private val repositorioAjustes = SettingsRepository(application)
 
     // --- Estados de Apariencia ---
+    /** URI de la imagen seleccionada como fondo de pantalla. Si es nula, se usa [colorSolido]. */
     var uriImagenFondo by mutableStateOf<Uri?>(null)
+    /** Color de fondo sólido si no se ha definido una imagen. */
     var colorSolido by mutableStateOf<Color?>(null)
+    /** Indica si el tema visual actual es claro (`true`) u oscuro (`false`). */
     var esTemaClaro by mutableStateOf(value = true)
-    var navBarAtTop by mutableStateOf(value = false)
+    /** Indica si la barra de navegación del sistema está configurada en la parte superior. */
+    var navBarEnLaParteSuperior by mutableStateOf(value = false)
 
     // --- Estados de Permisos ---
-    var isDefaultLauncher by mutableStateOf(value = false)
-    var isAccessibilityEnabled by mutableStateOf(value = false)
-    var canWriteSettings by mutableStateOf(value = false)
-    var hasBluetoothPermission by mutableStateOf(value = false)
+    /** `true` si esta app es el launcher por defecto actual. */
+    var esLauncherPorDefecto by mutableStateOf(value = false)
+    /** `true` si el servicio de accesibilidad de la app está activo. */
+    var estaAccesibilidadHabilitada by mutableStateOf(value = false)
+    /** `true` si la app puede modificar ajustes del sistema (brillo, etc). */
+    var puedeEscribirAjustes by mutableStateOf(value = false)
+    /** `true` si se tienen permisos dinámicos de Bluetooth concedidos. */
+    var tienePermisoBluetooth by mutableStateOf(value = false)
 
     init {
-        updatePermissionStates()
-        observeSettings()
+        actualizarEstadosPermisos()
+        observarAjustes()
     }
 
     /**
-     * Observa los cambios en las preferencias guardadas en DataStore.
+     * Inicia la observación de los flujos de datos desde el repositorio de ajustes.
+     * Actualiza automáticamente el fondo y el tema cuando cambian en el DataStore.
      */
-    private fun observeSettings() {
+    private fun observarAjustes() {
         viewModelScope.launch {
-            settingsRepository.fondoFlow.collect { fondo ->
+            repositorioAjustes.flujoFondo.collect { fondo ->
                 if (fondo.isNullOrEmpty()) {
-                    setBackground(null, null)
+                    establecerFondo(null, null)
                 } else {
                     if (fondo.startsWith("content://")) {
-                        setBackground(fondo.toUri(), null)
+                        establecerFondo(fondo.toUri(), null)
                     } else {
                         try {
-                            setBackground(null, Color(fondo.toULong()))
+                            establecerFondo(null, Color(fondo.toULong()))
                         } catch (_: Exception) {
-                            setBackground(null, null)
+                            establecerFondo(null, null)
                         }
                     }
                 }
             }
         }
         viewModelScope.launch {
-            settingsRepository.esClaroFlow.collect { isLight ->
-                updateTheme(isLight)
+            repositorioAjustes.flujoEsClaro.collect { esClaro ->
+                actualizarTema(esClaro)
             }
         }
     }
 
-    /**
-     * Guarda la preferencia de tema de forma persistente.
-     */
-    fun persistEsClaro(isLight: Boolean) {
+    fun persistEsClaro(esClaro: Boolean) {
         viewModelScope.launch {
-            settingsRepository.saveEsClaro(isLight)
+            repositorioAjustes.guardarEsClaro(esClaro)
         }
     }
 
-    /**
-     * Guarda la configuración de fondo de forma persistente.
-     */
     fun persistFondo(fondo: String) {
         viewModelScope.launch {
-            settingsRepository.saveFondo(fondo)
+            repositorioAjustes.guardarFondo(fondo)
         }
     }
 
-    /**
-     * Sincroniza los estados locales con los permisos reales del sistema.
-     */
-    fun updatePermissionStates() {
-        isDefaultLauncher = permissionManager.isDefaultLauncher()
-        isAccessibilityEnabled = permissionManager.isAccessibilityEnabled()
-        canWriteSettings = permissionManager.canWriteSettings()
-        hasBluetoothPermission = permissionManager.hasBluetoothPermission()
+    fun actualizarEstadosPermisos() {
+        esLauncherPorDefecto = gestorPermisos.esLauncherPorDefecto()
+        estaAccesibilidadHabilitada = gestorPermisos.estaAccesibilidadHabilitada()
+        puedeEscribirAjustes = gestorPermisos.puedeEscribirAjustes()
+        tienePermisoBluetooth = gestorPermisos.tienePermisoBluetooth()
     }
 
-    /**
-     * Lógica de verificación automática para el retorno desde pantallas de ajustes.
-     * Detecta un cambio en el estado del permiso antes de regresar a la app.
-     */
-    fun startAutoCheck(check: () -> Boolean, onComplete: () -> Unit) {
-        val initialValue = check()
+    fun iniciarComprobacionAutomatica(verificar: () -> Boolean, alCompletar: () -> Unit) {
+        val valorInicial = verificar()
         viewModelScope.launch {
             delay(500)
-            var attempts = 0
-            while (isActive && attempts < 40) {
-                val currentValue = check()
-                if (currentValue != initialValue) {
-                    updatePermissionStates()
+            var intentos = 0
+            while (isActive && intentos < 40) {
+                val valorActual = verificar()
+                if (valorActual != valorInicial) {
+                    actualizarEstadosPermisos()
                     delay(200)
-                    onComplete()
+                    alCompletar()
                     break
                 }
                 delay(1000)
-                attempts++
+                intentos++
             }
         }
     }
@@ -130,11 +133,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         getApplication<Application>().sendBroadcast(intent)
     }
 
-    fun updateTheme(isLight: Boolean) {
-        esTemaClaro = isLight
+    fun actualizarTema(esClaro: Boolean) {
+        esTemaClaro = esClaro
     }
 
-    fun setBackground(uri: Uri?, color: Color?) {
+    fun establecerFondo(uri: Uri?, color: Color?) {
         uriImagenFondo = uri
         colorSolido = color
     }

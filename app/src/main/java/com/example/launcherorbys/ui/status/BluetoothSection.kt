@@ -20,83 +20,82 @@ import kotlinx.coroutines.delay
 
 /**
  * Gestiona el estado y la visualización del icono de Bluetooth en la barra de estado.
- * Se muestra si está conectado a un dispositivo o si el usuario necesita gestionar permisos.
+ *
+ * Muestra el icono de Bluetooth dependiendo de si está habilitado o si hay dispositivos conectados.
+ * Si no se tienen permisos de Bluetooth, el icono permite solicitar dichos permisos.
+ *
+ * @param contexto El contexto de la aplicación.
+ * @param alSolicitarPermiso Callback para solicitar los permisos de Bluetooth necesarios.
  */
 @Composable
 fun BluetoothSection(
-    context: Context,
-    onRequestPermission: () -> Unit
+    contexto: Context,
+    alSolicitarPermiso: () -> Unit
 ) {
-    val systemManager = remember { SystemControlManager(context) }
-    val bluetoothAdapter = remember { 
+    val gestorSistema = remember { SystemControlManager(contexto) }
+    val adaptadorBluetooth = remember { 
         try {
-            val manager = context.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
+            val manager = contexto.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
             manager.adapter
         } catch (e: Exception) { null }
     }
 
-    var hasPermission by remember { mutableStateOf(true) }
-    var isBluetoothEnabled by remember { mutableStateOf(false) }
-    var isConnected by remember { mutableStateOf(false) }
+    var tienePermiso by remember { mutableStateOf(true) }
+    var estaBluetoothHabilitado by remember { mutableStateOf(false) }
+    var estaConectado by remember { mutableStateOf(false) }
 
-    // Función para actualizar los estados reales
-    val updateState = {
-        if (bluetoothAdapter != null) {
+    val actualizarEstado = {
+        if (adaptadorBluetooth != null) {
             val p = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED
+                ContextCompat.checkSelfPermission(contexto, Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED
             } else true
             
-            hasPermission = p
+            tienePermiso = p
 
             if (p) {
                 try {
-                    isBluetoothEnabled = bluetoothAdapter.isEnabled
-                    isConnected = bluetoothAdapter.getProfileConnectionState(BluetoothProfile.GATT) == BluetoothProfile.STATE_CONNECTED ||
-                                  bluetoothAdapter.getProfileConnectionState(BluetoothProfile.A2DP) == BluetoothProfile.STATE_CONNECTED
+                    estaBluetoothHabilitado = adaptadorBluetooth.isEnabled
+                    estaConectado = adaptadorBluetooth.getProfileConnectionState(BluetoothProfile.GATT) == BluetoothProfile.STATE_CONNECTED ||
+                                  adaptadorBluetooth.getProfileConnectionState(BluetoothProfile.A2DP) == BluetoothProfile.STATE_CONNECTED
                 } catch (e: SecurityException) {
-                    hasPermission = false
+                    tienePermiso = false
                 }
             } else {
-                isBluetoothEnabled = false
-                isConnected = false
+                estaBluetoothHabilitado = false
+                estaConectado = false
             }
         }
     }
 
-    // Refresco periódico y al montar
     LaunchedEffect(Unit) {
         while(true) {
-            updateState()
+            actualizarEstado()
             delay(3000) 
         }
     }
 
-    // Escucha cambios de estado del adaptador (ON/OFF)
-    DisposableEffect(context) {
-        val receiver = object : BroadcastReceiver() {
-            override fun onReceive(context: Context?, intent: Intent?) {
-                updateState()
+    DisposableEffect(contexto) {
+        val receptor = object : BroadcastReceiver() {
+            override fun onReceive(contexto: Context?, intent: Intent?) {
+                actualizarEstado()
             }
         }
-        context.registerReceiver(receiver, IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED))
-        onDispose { try { context.unregisterReceiver(receiver) } catch (e: Exception) {} }
+        contexto.registerReceiver(receptor, IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED))
+        onDispose { try { contexto.unregisterReceiver(receptor) } catch (e: Exception) {} }
     }
 
-    // Decidimos si mostrar el icono:
-    // 1. Si NO hay permiso, lo mostramos para que el usuario pueda pulsar y arreglarlo.
-    // 2. Si hay permiso, solo lo mostramos si está activado (similar al WiFi).
-    val shouldShow = bluetoothAdapter != null && (!hasPermission || isBluetoothEnabled)
+    val deberiaMostrar = adaptadorBluetooth != null && (!tienePermiso || estaBluetoothHabilitado)
 
-    if (shouldShow) {
+    if (deberiaMostrar) {
         StatusIcon(
-            imageVector = if (isConnected) Icons.Default.BluetoothConnected else Icons.Default.Bluetooth,
+            imageVector = if (estaConectado) Icons.Default.BluetoothConnected else Icons.Default.Bluetooth,
             contentDescription = "Bluetooth",
             isVisible = true,
             onClick = {
-                if (!hasPermission) {
-                    onRequestPermission()
+                if (!tienePermiso) {
+                    alSolicitarPermiso()
                 } else {
-                    systemManager.abrirAjustesBT()
+                    gestorSistema.abrirAjustesBluetooth()
                 }
             }
         )

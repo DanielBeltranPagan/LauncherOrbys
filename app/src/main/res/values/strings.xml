@@ -22,10 +22,6 @@
     <string name="permission_accessibility_service">Accessibility Service</string>
     <string name="permission_accessibility_service_desc">Enable gestures and quick actions</string>
 
-    <string name="dialog_audio_record_title">Record with audio?</string>
-    <string name="dialog_audio_record_desc">Microphone access is required to capture sound.</string>
-    <string name="dialog_audio_record_negative">No audio</string>
-
     <string name="dialog_bluetooth_title">Bluetooth Permission</string>
     <string name="dialog_bluetooth_desc">Permission is required to manage wireless connections.</string>
 

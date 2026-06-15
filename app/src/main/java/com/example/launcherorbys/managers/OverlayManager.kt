@@ -32,8 +32,6 @@ import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import com.example.launcherorbys.ui.drawer.AppDrawer
 import com.example.launcherorbys.ui.navigation.NavBar
 import com.example.launcherorbys.ui.navigation.SideNavBar
-import com.example.launcherorbys.ui.recording.RecordingTimer
-import com.example.launcherorbys.ui.recording.StopRecordingDialog
 import com.example.launcherorbys.ui.system.SystemOptionsPanel
 import com.example.launcherorbys.ui.theme.Dimens
 import com.example.launcherorbys.ui.theme.LauncherOrbysTheme
@@ -44,57 +42,52 @@ import com.example.launcherorbys.utils.Constants
  * Gestiona la jerarquía visual de Compose sobre el sistema Android.
  */
 class OverlayManager(
-    private val service: AccessibilityService,
-    private val systemManager: SystemControlManager,
-    private val appLauncher: AppLauncher
+    private val servicio: AccessibilityService,
+    private val gestorSistema: SystemControlManager,
+    private val lanzadorApp: AppLauncher
 ) {
-    private val windowManager = service.getSystemService(Context.WINDOW_SERVICE) as WindowManager
-    private val recordingManager = RecordingManager(service)
+    private val gestorVentanas = servicio.getSystemService(Context.WINDOW_SERVICE) as WindowManager
 
-    // Estado observable para forzar la actualización de recursos cuando cambia la configuración (idioma, etc.)
-    private var configurationTick by mutableIntStateOf(0)
-    private var currentConfig by mutableStateOf(Configuration(service.resources.configuration))
+    // Estado observable para forzar la actualización de recursos cuando cambia la configuración
+    private var tickConfiguracion by mutableIntStateOf(0)
+    private var configuracionActual by mutableStateOf(Configuration(servicio.resources.configuration))
 
-    fun onConfigurationChanged(newConfig: Configuration) {
-        currentConfig = Configuration(newConfig)
-        configurationTick++
-        // Actualizamos los parámetros de todas las vistas para que el sistema refresque sus recursos
-        if (::vistaNav.isInitialized) setupBarraNavegacion()
-        if (::vistaSideNavLeft.isInitialized) actualizarPosicionesSideNav()
+    fun alCambiarConfiguracion(nuevaConfiguracion: Configuration) {
+        configuracionActual = Configuration(nuevaConfiguracion)
+        tickConfiguracion++
+        if (::vistaNav.isInitialized) configurarBarraNavegacion()
+        if (::vistaNavLateralIzquierda.isInitialized) actualizarPosicionesNavLateral()
     }
 
     // --- Vistas de Superposición ---
     private lateinit var vistaNav: ComposeView
-    private lateinit var vistaDrawer: ComposeView
-    private lateinit var vistaSystemOptions: ComposeView
-    private lateinit var vistaSideNavLeft: ComposeView
-    private lateinit var vistaSideNavRight: ComposeView
-    private lateinit var vistaTimer: ComposeView
+    private lateinit var vistaCajon: ComposeView
+    private lateinit var vistaOpcionesSistema: ComposeView
+    private lateinit var vistaNavLateralIzquierda: ComposeView
+    private lateinit var vistaNavLateralDerecha: ComposeView
 
     // --- Parámetros de Ventana ---
-    private lateinit var paramsSideLeft: WindowManager.LayoutParams
-    private lateinit var paramsSideRight: WindowManager.LayoutParams
-    private lateinit var paramsTimer: WindowManager.LayoutParams
+    private lateinit var parametrosLateralIzquierdo: WindowManager.LayoutParams
+    private lateinit var parametrosLateralDerecho: WindowManager.LayoutParams
 
     // --- Estado de la Interfaz ---
-    var iconColorNav by mutableStateOf(Color.White)
-    var navBarBackground by mutableStateOf(Color.Black)
-    var drawerVisible by mutableStateOf(false)
-    var systemOptionsVisible by mutableStateOf(false)
-    var navBarAtTop by mutableStateOf(false)
-    var navBarExpanded by mutableStateOf(true)
-    var clockAtLeft by mutableStateOf(true)
+    var colorIconoNav by mutableStateOf(Color.White)
+    var fondoBarraNav by mutableStateOf(Color.Black)
+    var cajonVisible by mutableStateOf(false)
+    var opcionesSistemaVisibles by mutableStateOf(false)
+    var barraNavArriba by mutableStateOf(false)
+    var barraNavExpandida by mutableStateOf(true)
+    var relojALaIzquierda by mutableStateOf(true)
     
-    private var sideNavHeightLeft by mutableIntStateOf(0)
-    private var sideNavHeightRight by mutableIntStateOf(0)
+    private var alturaNavLateralIzquierda by mutableIntStateOf(0)
+    private var alturaNavLateralDerecha by mutableIntStateOf(0)
 
-    // Control de tiempo para el delay de 1.3 segundos
-    private var lastDrawerActionTime = 0L
+    private var ultimoTiempoAccionCajon = 0L
 
-    private fun canToggleDrawer(): Boolean {
-        val now = System.currentTimeMillis()
-        if (now - lastDrawerActionTime >= 1300L) {
-            lastDrawerActionTime = now
+    private fun puedeAlternarCajon(): Boolean {
+        val ahora = System.currentTimeMillis()
+        if (ahora - ultimoTiempoAccionCajon >= 500L) {
+            ultimoTiempoAccionCajon = ahora
             return true
         }
         return false
@@ -103,209 +96,217 @@ class OverlayManager(
     /**
      * Despliega todas las capas visuales necesarias.
      */
-    fun setupOverlays() {
-        setupDrawerOverlay()
-        setupSystemOptionsOverlay()
-        setupBarraNavegacion()
-        setupSideNavs()
-        setupTimerOverlay()
+    fun configurarCapas() {
+        configurarCapaCajon()
+        configurarCapaOpcionesSistema()
+        configurarBarraNavegacion()
+        configurarNavLaterales()
     }
 
     /**
      * Canaliza comandos desde la UI hacia acciones del sistema o cambios de estado.
      */
-    fun manejarComando(comando: String?) {
+    fun gestionarComando(comando: String?) {
         when (comando) {
-            "BACK" -> if (drawerVisible) toggleDrawer() else service.performGlobalAction(GLOBAL_ACTION_BACK)
+            "BACK" -> if (cajonVisible) alternarCajon() else servicio.performGlobalAction(GLOBAL_ACTION_BACK)
             "HOME" -> {
-                if (drawerVisible) toggleDrawer()
-                service.performGlobalAction(GLOBAL_ACTION_HOME)
-                launchHomeIntent()
+                if (cajonVisible) alternarCajon()
+                servicio.performGlobalAction(GLOBAL_ACTION_HOME)
+                lanzarIntentHome()
             }
             "RECENTS" -> {
-                if (drawerVisible) toggleDrawer()
-                if (systemOptionsVisible) toggleSystemOptions()
-                service.performGlobalAction(GLOBAL_ACTION_RECENTS)
+                if (cajonVisible) alternarCajon()
+                if (opcionesSistemaVisibles) alternarOpcionesSistema()
+                servicio.performGlobalAction(GLOBAL_ACTION_RECENTS)
             }
-            "APPS" -> toggleDrawer()
-            "SYSTEM_OPTIONS" -> toggleSystemOptions()
-            "WALLPAPER" -> openWallpaperPicker()
-            "GOOGLE" -> appLauncher.abrirUrl("https://www.google.com")
-            "FILES" -> appLauncher.abrirAppArchivos()
-            "CLOCK" -> if (!appLauncher.abrirRelojSistema()) toast("Reloj no encontrado")
-            "TOGGLE_NAVBAR_POSITION" -> toggleNavBarPosition()
-            "TOGGLE_NAVBAR_VISIBILITY" -> toggleNavBarVisibility()
+            "APPS" -> alternarCajon()
+            "SYSTEM_OPTIONS" -> alternarOpcionesSistema()
+            "WALLPAPER" -> abrirSelectorFondo()
+            "GOOGLE" -> lanzadorApp.abrirUrl("https://www.google.com")
+            "FILES" -> lanzadorApp.abrirAppArchivos()
+            "CLOCK" -> if (!lanzadorApp.abrirRelojSistema()) mostrarMensaje("Reloj no encontrado")
+            "TOGGLE_NAVBAR_POSITION" -> alternarPosicionBarraNav()
+            "TOGGLE_NAVBAR_VISIBILITY" -> alternarVisibilidadBarraNav()
             "TOGGLE_CLOCK_SIDE" -> {
-                clockAtLeft = !clockAtLeft
-                setupBarraNavegacion()
+                relojALaIzquierda = !relojALaIzquierda
+                configurarBarraNavegacion()
             }
         }
     }
 
-    // --- Gestión de Capas Específicas ---
-
-    fun closeAllOverlays() {
-        if (drawerVisible) toggleDrawer()
-        if (systemOptionsVisible) toggleSystemOptions()
+    fun cerrarTodasLasCapas() {
+        if (cajonVisible) alternarCajon()
+        if (opcionesSistemaVisibles) alternarOpcionesSistema()
     }
 
-    fun toggleNavBarVisibility() {
-        navBarExpanded = !navBarExpanded
-        setupBarraNavegacion()
-        actualizarPosicionesSideNav()
+    fun alternarVisibilidadBarraNav() {
+        barraNavExpandida = !barraNavExpandida
+        configurarBarraNavegacion()
+        actualizarPosicionesNavLateral()
     }
 
-    fun toggleNavBarPosition() {
-        navBarAtTop = !navBarAtTop
-        setupBarraNavegacion()
-        actualizarPosicionesSideNav()
-        service.sendBroadcast(Intent(Constants.ACTION_NAVBAR_POSITION_CHANGED).putExtra("atTop", navBarAtTop))
+    fun alternarPosicionBarraNav() {
+        barraNavArriba = !barraNavArriba
+        configurarBarraNavegacion()
+        actualizarPosicionesNavLateral()
+        servicio.sendBroadcast(Intent(Constants.ACTION_NAVBAR_POSITION_CHANGED).putExtra("atTop", barraNavArriba))
     }
 
-    fun toggleDrawer() {
-        if (!canToggleDrawer()) return
+    fun alternarCajon() {
+        if (!puedeAlternarCajon()) return
 
-        if (!drawerVisible) {
-            // Cada vez que se abre, forzamos actualización de configuración
-            configurationTick++ 
-            drawerVisible = true
-            windowManager.addView(vistaDrawer, createOverlayParams(MATCH_PARENT, MATCH_PARENT))
+        if (!cajonVisible) {
+            tickConfiguracion++ 
+            cajonVisible = true
+            
+            // Calculamos el espacio disponible para que el cajón no tape la barra de navegación
+            val densidad = servicio.resources.displayMetrics.density
+            val alturaNav = if (!barraNavExpandida) 0 else (48 * densidad).toInt()
+            val alturaPantalla = servicio.resources.displayMetrics.heightPixels
+            
+            val parametros = crearParametrosSuperposicion(MATCH_PARENT, alturaPantalla - alturaNav).apply {
+                // Si la barra está arriba, el cajón se pega abajo. Si está abajo, el cajón se pega arriba.
+                gravity = if (barraNavArriba) Gravity.BOTTOM else Gravity.TOP
+                // Importante: No usar FLAG_LAYOUT_IN_SCREEN para que respete el área de la ventana
+                flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                        WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH
+            }
+            
+            gestorVentanas.addView(vistaCajon, parametros)
         } else {
-            if (::vistaDrawer.isInitialized && vistaDrawer.parent != null) windowManager.removeView(vistaDrawer)
-            drawerVisible = false
+            if (::vistaCajon.isInitialized && vistaCajon.parent != null) gestorVentanas.removeView(vistaCajon)
+            cajonVisible = false
         }
     }
 
-    fun toggleSystemOptions() {
-        if (!systemOptionsVisible) {
-            configurationTick++
-            systemManager.actualizarValoresSistema()
-            systemOptionsVisible = true
-            windowManager.addView(vistaSystemOptions, createOverlayParams(MATCH_PARENT, MATCH_PARENT))
+    fun alternarOpcionesSistema() {
+        if (!opcionesSistemaVisibles) {
+            tickConfiguracion++
+            gestorSistema.actualizarValoresSistema()
+            opcionesSistemaVisibles = true
+            gestorVentanas.addView(vistaOpcionesSistema, crearParametrosSuperposicion(MATCH_PARENT, MATCH_PARENT))
         } else {
-            if (::vistaSystemOptions.isInitialized && vistaSystemOptions.parent != null) windowManager.removeView(vistaSystemOptions)
-            systemOptionsVisible = false
+            if (::vistaOpcionesSistema.isInitialized && vistaOpcionesSistema.parent != null) gestorVentanas.removeView(vistaOpcionesSistema)
+            opcionesSistemaVisibles = false
         }
     }
 
     fun actualizarColores(esClaro: Boolean) {
-        navBarBackground = if (esClaro) Color.Black else Color.White
-        iconColorNav = if (esClaro) Color.White else Color.Black
+        fondoBarraNav = if (esClaro) Color.Black else Color.White
+        colorIconoNav = if (esClaro) Color.White else Color.Black
     }
 
-    // --- Configuración de Vistas Compose ---
+    private fun configurarBarraNavegacion() {
+        val densidad = servicio.resources.displayMetrics.density
+        val alturaPx = if (!barraNavExpandida) 1 else (48 * densidad).toInt()
 
-    private fun setupBarraNavegacion() {
-        val density = service.resources.displayMetrics.density
-        val heightPx = if (!navBarExpanded) 1 else (48 * density).toInt()
-
-        val params = createOverlayParams(MATCH_PARENT, heightPx).apply {
-            gravity = if (navBarAtTop) Gravity.TOP else Gravity.BOTTOM
+        val parametros = crearParametrosSuperposicion(MATCH_PARENT, alturaPx).apply {
+            gravity = if (barraNavArriba) Gravity.TOP else Gravity.BOTTOM
             flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                     WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
                     WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
-            if (!navBarExpanded) flags = flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+            if (!barraNavExpandida) flags = flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
         }
 
         if (!::vistaNav.isInitialized) {
-            vistaNav = createComposeView {
+            vistaNav = crearVistaCompose {
                 NavBar(
                     onActionClicked = { 
-                        manejarComando(it)
-                        service.sendBroadcast(Intent(Constants.ACTION_NAVBAR_COMMAND).putExtra("comando", it)) 
+                        gestionarComando(it)
+                        servicio.sendBroadcast(Intent(Constants.ACTION_NAVBAR_COMMAND).putExtra("comando", it)) 
                     },
-                    iconColor = iconColorNav,
-                    backgroundColor = navBarBackground,
-                    isAtTop = navBarAtTop,
-                    isExpanded = navBarExpanded,
-                    clockAtLeft = clockAtLeft
+                    iconColor = colorIconoNav,
+                    backgroundColor = fondoBarraNav,
+                    isAtTop = barraNavArriba,
+                    isExpanded = barraNavExpandida,
+                    clockAtLeft = relojALaIzquierda
                 )
             }
-            windowManager.addView(vistaNav, params)
+            gestorVentanas.addView(vistaNav, parametros)
         } else {
-            windowManager.updateViewLayout(vistaNav, params)
+            gestorVentanas.updateViewLayout(vistaNav, parametros)
         }
     }
 
-    private fun setupSideNavs() {
-        val initialY = (service.resources.displayMetrics.heightPixels / 3)
-        paramsSideLeft = createSideNavParams(Gravity.START, initialY)
-        paramsSideRight = createSideNavParams(Gravity.END, initialY)
+    private fun configurarNavLaterales() {
+        val yInicial = (servicio.resources.displayMetrics.heightPixels / 3)
+        parametrosLateralIzquierdo = crearParametrosNavLateral(Gravity.START, yInicial)
+        parametrosLateralDerecho = crearParametrosNavLateral(Gravity.END, yInicial)
 
-        vistaSideNavLeft = createSideNavComposeView(true, paramsSideLeft)
-        vistaSideNavRight = createSideNavComposeView(false, paramsSideRight)
+        vistaNavLateralIzquierda = crearVistaNavLateral(true, parametrosLateralIzquierdo)
+        vistaNavLateralDerecha = crearVistaNavLateral(false, parametrosLateralDerecho)
         
-        windowManager.addView(vistaSideNavLeft, paramsSideLeft)
-        windowManager.addView(vistaSideNavRight, paramsSideRight)
+        gestorVentanas.addView(vistaNavLateralIzquierda, parametrosLateralIzquierdo)
+        gestorVentanas.addView(vistaNavLateralDerecha, parametrosLateralDerecho)
     }
 
-    private fun createSideNavComposeView(isLeft: Boolean, params: WindowManager.LayoutParams): ComposeView {
-        return createComposeView {
+    private fun crearVistaNavLateral(esIzquierda: Boolean, parametros: WindowManager.LayoutParams): ComposeView {
+        return crearVistaCompose {
             SideNavBar(
-                isLeft = isLeft,
-                onAction = { manejarComando(it) },
-                onDrag = { deltaY ->
-                    params.y += deltaY.toInt()
-                    constrainSideNav(isLeft, params)
-                    windowManager.updateViewLayout(if (isLeft) vistaSideNavLeft else vistaSideNavRight, params)
+                isLeft = esIzquierda,
+                onAction = { gestionarComando(it) },
+                onDrag = { desplazamientoY ->
+                    parametros.y += desplazamientoY.toInt()
+                    restringirNavLateral(esIzquierda, parametros)
+                    gestorVentanas.updateViewLayout(if (esIzquierda) vistaNavLateralIzquierda else vistaNavLateralDerecha, parametros)
                 },
-                isNavBarVisible = navBarExpanded,
-                isNavBarAtTop = navBarAtTop,
-                onHeightChanged = { newHeight ->
-                    if (isLeft) sideNavHeightLeft = newHeight else sideNavHeightRight = newHeight
-                    ajustarPosicionSideNav(isLeft)
+                isNavBarVisible = barraNavExpandida,
+                isNavBarAtTop = barraNavArriba,
+                onHeightChanged = { nuevaAltura ->
+                    if (esIzquierda) alturaNavLateralIzquierda = nuevaAltura else alturaNavLateralDerecha = nuevaAltura
+                    ajustarPosicionNavLateral(esIzquierda)
                 }
             )
         }
     }
 
-    private fun setupDrawerOverlay() {
-        vistaDrawer = createComposeView {
+    private fun configurarCapaCajon() {
+        vistaCajon = crearVistaCompose {
             Box(
-                modifier = Modifier.fillMaxSize().clickable(null, null) { toggleDrawer() },
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clickable(null, null) { alternarCajon() },
                 contentAlignment = Alignment.Center
             ) {
-                AppDrawer(onClose = { toggleDrawer() })
+                AppDrawer(alCerrar = { alternarCajon() })
             }
         }
     }
 
-    private fun setupSystemOptionsOverlay() {
-        vistaSystemOptions = createComposeView {
+    private fun configurarCapaOpcionesSistema() {
+        vistaOpcionesSistema = crearVistaCompose {
             Box(
-                modifier = Modifier.fillMaxSize().clickable(null, null) { toggleSystemOptions() },
+                modifier = Modifier.fillMaxSize().clickable(null, null) { alternarOpcionesSistema() },
                 contentAlignment = Alignment.TopCenter
             ) {
-                // Alineamos el panel para que su parte inferior coincida con la del AppDrawer (que está centrado y mide 65%)
-                val drawerBottomHeight = 0.5f + (Dimens.DrawerHeightPercent / 2f)
+                val alturaFondoCajon = 0.5f + (Dimens.DrawerHeightPercent / 2f)
                 
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .fillMaxHeight(drawerBottomHeight),
+                        .fillMaxHeight(alturaFondoCajon),
                     contentAlignment = Alignment.BottomCenter
                 ) {
                     SystemOptionsPanel(
-                        onSettingsClick = { openSettings(Settings.ACTION_SETTINGS) },
+                        onSettingsClick = { abrirAjustes(Settings.ACTION_SETTINGS) },
                         onWifiClick = { 
-                            systemManager.abrirAjustesWifi()
-                            vistaSystemOptions.postDelayed({ toggleSystemOptions() }, 200)
+                            gestorSistema.abrirAjustesWifi()
+                            vistaOpcionesSistema.postDelayed({ alternarOpcionesSistema() }, 200)
                         },
-                        onBluetoothClick = { handleBluetoothAction() },
-                        onWallpaperClick = { openWallpaperPicker() },
-                        onMuteClick = { systemManager.toggleMute() },
-                        onPowerClick = { service.performGlobalAction(GLOBAL_ACTION_POWER_DIALOG); toggleSystemOptions() },
-                        onScreenshotClick = { takeScreenshot() },
-                        onRecordClick = { handleRecordAction() },
-                        isWifiOn = systemManager.isWifiOn,
-                        isBluetoothOn = systemManager.isBluetoothOn,
-                        isMuted = systemManager.isMuted,
-                        currentBrightness = systemManager.currentBrightness,
-                        onBrightnessChange = { systemManager.cambiarBrillo(it) },
-                        isAutoBrightness = systemManager.isAutoBrightness,
-                        onAutoBrightnessChange = { systemManager.cambiarModoBrillo(it) },
-                        currentVolume = systemManager.currentVolume,
-                        onVolumeChange = { systemManager.cambiarVolumen(it) },
+                        onBluetoothClick = { gestionarAccionBluetooth() },
+                        onWallpaperClick = { abrirSelectorFondo() },
+                        onMuteClick = { gestorSistema.alternarSilencio() },
+                        onPowerClick = { servicio.performGlobalAction(GLOBAL_ACTION_POWER_DIALOG); alternarOpcionesSistema() },
+                        onScreenshotClick = { tomarCapturaPantalla() },
+                        isWifiOn = gestorSistema.estaWifiActivado,
+                        isBluetoothOn = gestorSistema.estaBluetoothActivado,
+                        isMuted = gestorSistema.estaSilenciado,
+                        currentBrightness = gestorSistema.brilloActual,
+                        onBrightnessChange = { gestorSistema.cambiarBrillo(it) },
+                        isAutoBrightness = gestorSistema.esBrilloAutomatico,
+                        onAutoBrightnessChange = { gestorSistema.cambiarModoBrillo(it) },
+                        currentVolume = gestorSistema.volumenActual,
+                        onVolumeChange = { gestorSistema.cambiarVolumen(it) },
                         modifier = Modifier.clickable(null, null) { }
                     )
                 }
@@ -313,235 +314,146 @@ class OverlayManager(
         }
     }
 
-    private fun setupTimerOverlay() {
-        paramsTimer = createSideNavParams(Gravity.START, 8).apply {
-            x = (16 * service.resources.displayMetrics.density).toInt()
-        }
-
-        vistaTimer = createComposeView {
-            Box(modifier = Modifier.fillMaxSize()) {
-                if (recordingManager.isRecording) {
-                    Box(modifier = Modifier.padding(top = 8.dp, start = 16.dp)) {
-                        RecordingTimer(
-                            seconds = recordingManager.recordingSeconds,
-                            onStop = { 
-                                recordingManager.showStopConfirmation = true 
-                                actualizarVentanaTimer(true)
-                            }
-                        )
-                    }
-                }
-                if (recordingManager.showStopConfirmation) {
-                    StopRecordingDialog(
-                        onConfirm = { recordingManager.stopRecording() },
-                        onCancel = { 
-                            recordingManager.showStopConfirmation = false 
-                            actualizarVentanaTimer(false)
-                        }
-                    )
-                }
-            }
-        }
-    }
-
-    // --- Lógica de Grabación ---
-
-    fun startRecording() {
-        if (navBarExpanded) {
-            navBarExpanded = false
-            setupBarraNavegacion()
-            actualizarPosicionesSideNav()
-        }
-        recordingManager.startTimer(service as LifecycleOwner)
-        actualizarVentanaTimer(false)
-        if (vistaTimer.parent == null) windowManager.addView(vistaTimer, paramsTimer)
-    }
-
-    fun finishRecordingUI() {
-        recordingManager.resetState()
-        if (::vistaTimer.isInitialized && vistaTimer.parent != null) windowManager.removeView(vistaTimer)
-    }
-
-    private fun handleRecordAction() {
-        if (recordingManager.isRecording) {
-            recordingManager.stopRecording()
-        } else {
-            appLauncher.iniciarGrabacionEstandar()
-        }
-        toggleSystemOptions()
-    }
-
-    private fun actualizarVentanaTimer(full: Boolean) {
-        if (!::paramsTimer.isInitialized || vistaTimer.parent == null) return
-        paramsTimer.width = if (full) MATCH_PARENT else WRAP_CONTENT
-        paramsTimer.height = if (full) MATCH_PARENT else WRAP_CONTENT
-        windowManager.updateViewLayout(vistaTimer, paramsTimer)
-    }
-
-    // --- Helpers Internos ---
-
-    private fun handleBluetoothAction() {
-        val hasPermission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            service.checkSelfPermission(android.Manifest.permission.BLUETOOTH_CONNECT) == android.content.pm.PackageManager.PERMISSION_GRANTED
+    private fun gestionarAccionBluetooth() {
+        val tienePermiso = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            servicio.checkSelfPermission(android.Manifest.permission.BLUETOOTH_CONNECT) == android.content.pm.PackageManager.PERMISSION_GRANTED
         } else true
 
-        if (!hasPermission) {
-            // 1. Intent directo para abrir la actividad
-            val intent = Intent(service, com.example.launcherorbys.MainActivity::class.java).apply {
+        if (!tienePermiso) {
+            val intent = Intent(servicio, com.example.launcherorbys.MainActivity::class.java).apply {
                 action = Constants.ACTION_REQUEST_BLUETOOTH
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
             }
-            service.startActivity(intent)
+            servicio.startActivity(intent)
+            servicio.sendBroadcast(Intent(Constants.ACTION_REQUEST_BLUETOOTH).setPackage(servicio.packageName))
             
-            // 2. Broadcast de respaldo por si la actividad ya está visible pero en segundo plano
-            service.sendBroadcast(Intent(Constants.ACTION_REQUEST_BLUETOOTH).setPackage(service.packageName))
-            
-            if (systemOptionsVisible) toggleSystemOptions()
+            if (opcionesSistemaVisibles) alternarOpcionesSistema()
             return
         }
 
-        // Si ya tiene permiso, vamos directo a la pestaña de Bluetooth detectada en el logcat
-        systemManager.abrirAjustesBT()
+        gestorSistema.abrirAjustesBluetooth()
 
-        if (systemOptionsVisible) toggleSystemOptions()
+        if (opcionesSistemaVisibles) alternarOpcionesSistema()
     }
 
-
-
-
-    private fun takeScreenshot() {
-        if (navBarExpanded) {
-            navBarExpanded = false
-            setupBarraNavegacion()
-            actualizarPosicionesSideNav()
+    private fun tomarCapturaPantalla() {
+        if (barraNavExpandida) {
+            barraNavExpandida = false
+            configurarBarraNavegacion()
+            actualizarPosicionesNavLateral()
         }
 
-        // Pequeño delay para que la barra desaparezca antes de la captura
         vistaNav.postDelayed({
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                service.performGlobalAction(GLOBAL_ACTION_TAKE_SCREENSHOT)
+                servicio.performGlobalAction(GLOBAL_ACTION_TAKE_SCREENSHOT)
             } else {
-                toast("No soportado")
+                mostrarMensaje("No soportado")
             }
         }, 300)
 
-        toggleSystemOptions()
+        alternarOpcionesSistema()
     }
 
-    private fun openSettings(action: String) {
-        systemManager.launchSettings(action)
-        vistaSystemOptions.postDelayed({ toggleSystemOptions() }, 200)
+    private fun abrirAjustes(accion: String) {
+        gestorSistema.lanzarAjustes(accion)
+        vistaOpcionesSistema.postDelayed({ alternarOpcionesSistema() }, 200)
     }
 
-    private fun openWallpaperPicker() {
+    private fun abrirSelectorFondo() {
         val intents = mutableListOf<Intent>()
         
-        // 1. Wallpaper & Style (Google / Pixel / Android 12+)
         intents.add(Intent("com.google.android.apps.wallpaper.VIEW_WALLPAPER_COLLECTION"))
         intents.add(Intent().setClassName("com.google.android.apps.wallpaper", "com.google.android.apps.wallpaper.WallpaperPickerActivity"))
         intents.add(Intent().setClassName("com.google.android.apps.wallpaper", "com.google.android.apps.wallpaper.PickerActivity"))
-
-        // 2. Samsung (One UI)
         intents.add(Intent().setClassName("com.samsung.android.app.wallpaper", "com.samsung.android.app.wallpaper.WallpaperStyleActivity"))
         intents.add(Intent().setClassName("com.samsung.android.app.wallpaper", "com.samsung.android.app.wallpaper.KeyguardWallpaperActivity"))
-
-        // 3. Xiaomi (MIUI)
         intents.add(Intent().setClassName("com.android.thememanager", "com.android.thememanager.WallpaperSettingsActivity"))
-        
-        // 4. Otros (Oppo, Motorola, Huawei)
         intents.add(Intent("com.oplus.wallpaper.PICKER"))
         intents.add(Intent().setClassName("com.motorola.personalize", "com.motorola.personalize.app.PersonalizeActivity"))
         intents.add(Intent().setClassName("com.huawei.android.totemweather", "com.huawei.android.totemweather.WallpaperPickerActivity"))
-
-        // 5. Ajustes de Android estándar
         intents.add(Intent("android.settings.WALLPAPER_SETTINGS"))
         intents.add(Intent().setClassName("com.android.settings", "com.android.settings.Settings\$WallpaperSettingsActivity"))
-        
-        // 6. Selector estándar (Chooser)
         intents.add(Intent(Intent.ACTION_SET_WALLPAPER))
 
-        var started = false
+        var iniciado = false
         for (intent in intents) {
             try {
                 intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                service.startActivity(intent)
-                started = true
+                servicio.startActivity(intent)
+                iniciado = true
                 break
             } catch (_: Exception) { }
         }
 
-        if (!started) {
+        if (!iniciado) {
             try {
-                service.startActivity(Intent(Settings.ACTION_DISPLAY_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                servicio.startActivity(Intent(Settings.ACTION_DISPLAY_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
             } catch (_: Exception) {
-                toast("No se encontró el selector de fondo")
+                mostrarMensaje("No se encontró el selector de fondo")
             }
         }
 
-        if (systemOptionsVisible) toggleSystemOptions()
+        if (opcionesSistemaVisibles) alternarOpcionesSistema()
     }
 
-    private fun launchHomeIntent() {
+    private fun lanzarIntentHome() {
         val intent = Intent(Intent.ACTION_MAIN).apply {
             addCategory(Intent.CATEGORY_HOME)
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION)
         }
-        service.startActivity(intent)
+        servicio.startActivity(intent)
     }
 
-    private fun actualizarPosicionesSideNav() {
-        ajustarPosicionSideNav(true)
-        ajustarPosicionSideNav(false)
+    private fun actualizarPosicionesNavLateral() {
+        ajustarPosicionNavLateral(true)
+        ajustarPosicionNavLateral(false)
     }
 
-    private fun ajustarPosicionSideNav(isLeft: Boolean) {
-        if (!(::paramsSideLeft.isInitialized && ::paramsSideRight.isInitialized)) return
-        val params = if (isLeft) paramsSideLeft else paramsSideRight
-        val vista = if (isLeft) vistaSideNavLeft else vistaSideNavRight
+    private fun ajustarPosicionNavLateral(esIzquierda: Boolean) {
+        if (!(::parametrosLateralIzquierdo.isInitialized && ::parametrosLateralDerecho.isInitialized)) return
+        val parametros = if (esIzquierda) parametrosLateralIzquierdo else parametrosLateralDerecho
+        val vista = if (esIzquierda) vistaNavLateralIzquierda else vistaNavLateralDerecha
         if (vista.parent != null) {
-            constrainSideNav(isLeft, params)
-            windowManager.updateViewLayout(vista, params)
+            restringirNavLateral(esIzquierda, parametros)
+            gestorVentanas.updateViewLayout(vista, parametros)
         }
     }
 
-    private fun constrainSideNav(isLeft: Boolean, params: WindowManager.LayoutParams) {
-        val density = service.resources.displayMetrics.density
-        val screenHeight = service.resources.displayMetrics.heightPixels
-        val viewHeight = if (isLeft) sideNavHeightLeft else sideNavHeightRight
-        val navHeight = if (!navBarExpanded) 0 else (48 * density).toInt()
-        val minY = if (navBarAtTop) (navHeight + (60 * density).toInt()) else (60 * density).toInt()
-        val maxY = screenHeight - viewHeight - (if (navBarAtTop) 16 * density else (navHeight + 8 * density)).toInt()
-        params.y = params.y.coerceIn(minY, maxY.coerceAtLeast(minY))
+    private fun restringirNavLateral(esIzquierda: Boolean, parametros: WindowManager.LayoutParams) {
+        val densidad = servicio.resources.displayMetrics.density
+        val alturaPantalla = servicio.resources.displayMetrics.heightPixels
+        val alturaVista = if (esIzquierda) alturaNavLateralIzquierda else alturaNavLateralDerecha
+        val alturaNav = if (!barraNavExpandida) 0 else (48 * densidad).toInt()
+        val minY = if (barraNavArriba) (alturaNav + (60 * densidad).toInt()) else (60 * densidad).toInt()
+        val maxY = alturaPantalla - alturaVista - (if (barraNavArriba) 16 * densidad else (alturaNav + 8 * densidad)).toInt()
+        parametros.y = parametros.y.coerceIn(minY, maxY.coerceAtLeast(minY))
     }
 
-    private fun createComposeView(content: @Composable () -> Unit): ComposeView {
-        // En servicios de accesibilidad, a veces el contexto base no refresca recursos automáticamente.
-        // Usamos LocalConfiguration y un key para asegurar recomposición total.
-        return ComposeView(service).apply {
-            setViewTreeLifecycleOwner(service as LifecycleOwner)
-            setViewTreeSavedStateRegistryOwner(service as SavedStateRegistryOwner)
-            setViewTreeViewModelStoreOwner(service as ViewModelStoreOwner)
+    private fun crearVistaCompose(contenido: @Composable () -> Unit): ComposeView {
+        return ComposeView(servicio).apply {
+            setViewTreeLifecycleOwner(servicio as LifecycleOwner)
+            setViewTreeSavedStateRegistryOwner(servicio as SavedStateRegistryOwner)
+            setViewTreeViewModelStoreOwner(servicio as ViewModelStoreOwner)
             setContent { 
-                val config = currentConfig
-                val fontScale = config.fontScale
-                val boldText = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                val config = configuracionActual
+                val escalaFuente = config.fontScale
+                val textoNegrita = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                     config.fontWeightAdjustment
                 } else 0
                 
-                // Forzamos manualmente la densidad para que Compose use el fontScale actualizado
-                val densityValue = service.resources.displayMetrics.density
-                val customDensity = Density(densityValue, fontScale)
+                val valorDensidad = servicio.resources.displayMetrics.density
+                val densidadPersonalizada = Density(valorDensidad, escalaFuente)
 
-                key(config.locales[0].language, configurationTick, fontScale, boldText) {
+                key(config.locales[0].language, tickConfiguracion, escalaFuente, textoNegrita) {
                     CompositionLocalProvider(
                         LocalConfiguration provides config,
-                        LocalDensity provides customDensity
+                        LocalDensity provides densidadPersonalizada
                     ) {
                         LauncherOrbysTheme(
-                            darkTheme = navBarBackground == Color.White,
-                            baseWeight = if (boldText > 0) FontWeight.Bold else FontWeight.Normal
+                            darkTheme = fondoBarraNav == Color.White,
+                            baseWeight = if (textoNegrita > 0) FontWeight.Bold else FontWeight.Normal
                         ) {
-                            content() 
+                            contenido() 
                         }
                     }
                 }
@@ -549,32 +461,31 @@ class OverlayManager(
         }
     }
 
-    private fun createOverlayParams(w: Int, h: Int) = WindowManager.LayoutParams(
-        w, h, WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+    private fun crearParametrosSuperposicion(ancho: Int, alto: Int) = WindowManager.LayoutParams(
+        ancho, alto, WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
         WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
         android.graphics.PixelFormat.TRANSLUCENT
     )
 
-    private fun createSideNavParams(grav: Int, initialY: Int) = createOverlayParams(WRAP_CONTENT, WRAP_CONTENT).apply {
-        gravity = grav or Gravity.TOP
-        y = initialY
+    private fun crearParametrosNavLateral(gravedad: Int, yInicial: Int) = crearParametrosSuperposicion(WRAP_CONTENT, WRAP_CONTENT).apply {
+        gravity = gravedad or Gravity.TOP
+        y = yInicial
         flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
     }
 
-    private fun toast(m: String) = Toast.makeText(service, m, Toast.LENGTH_SHORT).show()
+    private fun mostrarMensaje(m: String) = Toast.makeText(servicio, m, Toast.LENGTH_SHORT).show()
 
     fun onDestroy() {
         val vistas = listOf(
             if (::vistaNav.isInitialized) vistaNav else null,
-            if (::vistaDrawer.isInitialized) vistaDrawer else null,
-            if (::vistaSystemOptions.isInitialized) vistaSystemOptions else null,
-            if (::vistaSideNavLeft.isInitialized) vistaSideNavLeft else null,
-            if (::vistaSideNavRight.isInitialized) vistaSideNavRight else null,
-            if (::vistaTimer.isInitialized) vistaTimer else null
+            if (::vistaCajon.isInitialized) vistaCajon else null,
+            if (::vistaOpcionesSistema.isInitialized) vistaOpcionesSistema else null,
+            if (::vistaNavLateralIzquierda.isInitialized) vistaNavLateralIzquierda else null,
+            if (::vistaNavLateralDerecha.isInitialized) vistaNavLateralDerecha else null
         )
         vistas.forEach { vista ->
             if (vista != null && vista.parent != null) {
-                try { windowManager.removeView(vista) } catch (_: Exception) {}
+                try { gestorVentanas.removeView(vista) } catch (_: Exception) {}
             }
         }
     }

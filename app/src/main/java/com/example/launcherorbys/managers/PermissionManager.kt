@@ -16,9 +16,9 @@ import com.example.launcherorbys.services.LauncherAccessibilityService
  * autorizaciones requeridas para realizar tareas sensibles, como ser el lanzador
  * predeterminado, escribir configuraciones del sistema o capturar audio.
  *
- * @property context El contexto de la aplicación utilizado para consultar servicios del sistema y el PackageManager.
+ * @property contexto El contexto de la aplicación utilizado para consultar servicios del sistema y el PackageManager.
  */
-class PermissionManager(private val context: Context) {
+class PermissionManager(private val contexto: Context) {
 
     /**
      * Determina si esta aplicación está configurada actualmente como el Launcher predeterminado del sistema.
@@ -26,10 +26,10 @@ class PermissionManager(private val context: Context) {
      * @return `true` si el paquete de la actividad que resuelve [Intent.ACTION_MAIN] con
      *         [Intent.CATEGORY_HOME] coincide con el de esta aplicación; `false` en caso contrario.
      */
-    fun isDefaultLauncher(): Boolean {
+    fun esLauncherPorDefecto(): Boolean {
         val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
-        val resolveInfo = context.packageManager.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY)
-        return resolveInfo?.activityInfo?.packageName == context.packageName
+        val resolveInfo = contexto.packageManager.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY)
+        return resolveInfo?.activityInfo?.packageName == contexto.packageName
     }
 
     /**
@@ -40,13 +40,13 @@ class PermissionManager(private val context: Context) {
      *
      * @return `true` si el servicio está activado en los ajustes; `false` en caso contrario.
      */
-    fun isAccessibilityEnabled(): Boolean {
+    fun estaAccesibilidadHabilitada(): Boolean {
         // 1. Intento rápido con el AccessibilityManager
-        val am = context.getSystemService(Context.ACCESSIBILITY_SERVICE) as android.view.accessibility.AccessibilityManager
+        val am = contexto.getSystemService(Context.ACCESSIBILITY_SERVICE) as android.view.accessibility.AccessibilityManager
         val enabledServices = am.getEnabledAccessibilityServiceList(android.accessibilityservice.AccessibilityServiceInfo.FEEDBACK_ALL_MASK)
         
         val isEnabledByManager = enabledServices.any { 
-            it.resolveInfo.serviceInfo.packageName == context.packageName &&
+            it.resolveInfo.serviceInfo.packageName == contexto.packageName &&
             it.resolveInfo.serviceInfo.name == LauncherAccessibilityService::class.java.name
         }
         
@@ -55,9 +55,9 @@ class PermissionManager(private val context: Context) {
         // 2. Fallback: Comprobación directa en Settings.Secure
         // Útil cuando el servicio está habilitado pero el sistema aún no lo ha reiniciado tras una actualización.
         try {
-            val expectedService = ComponentName(context, LauncherAccessibilityService::class.java).flattenToString()
+            val expectedService = ComponentName(contexto, LauncherAccessibilityService::class.java).flattenToString()
             val enabledSettings = Settings.Secure.getString(
-                context.contentResolver,
+                contexto.contentResolver,
                 Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
             )
             if (enabledSettings != null) {
@@ -84,41 +84,34 @@ class PermissionManager(private val context: Context) {
      *
      * @return `true` si el permiso ha sido concedido mediante la pantalla de configuración del sistema.
      */
-    fun canWriteSettings(): Boolean {
-        return Settings.System.canWrite(context)
+    fun puedeEscribirAjustes(): Boolean {
+        return Settings.System.canWrite(contexto)
     }
 
     /**
      * Verifica si se dispone de los permisos necesarios para interactuar con dispositivos Bluetooth.
      *
      * En versiones inferiores a Android 12 (API 31), este método siempre devuelve `true`
-     * si el permiso está declarado en el manifiesto. En Android 12+, verifica el permiso
-     * dinámico `BLUETOOTH_CONNECT`.
+     * si el permiso está declarado en el manifiesto. En Android 12+, verifica los permisos
+     * dinámicos `BLUETOOTH_CONNECT` y `BLUETOOTH_SCAN`.
      *
-     * @return `true` si se tiene permiso para conectar con dispositivos Bluetooth.
+     * @return `true` si se tiene permiso para conectar y escanear dispositivos Bluetooth.
      */
-    fun hasBluetoothPermission(): Boolean {
+    fun tienePermisoBluetooth(): Boolean {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            ContextCompat.checkSelfPermission(
-                context, 
+            val connectGranted = ContextCompat.checkSelfPermission(
+                contexto, 
                 android.Manifest.permission.BLUETOOTH_CONNECT
             ) == PackageManager.PERMISSION_GRANTED
+            
+            val scanGranted = ContextCompat.checkSelfPermission(
+                contexto,
+                android.Manifest.permission.BLUETOOTH_SCAN
+            ) == PackageManager.PERMISSION_GRANTED
+
+            connectGranted && scanGranted
         } else {
             true
         }
-    }
-
-    /**
-     * Verifica si el usuario ha concedido permiso para grabar audio (micrófono).
-     *
-     * Requerido principalmente para la funcionalidad de grabación de pantalla con audio.
-     *
-     * @return `true` si el permiso `RECORD_AUDIO` está concedido.
-     */
-    fun hasAudioPermission(): Boolean {
-        return ContextCompat.checkSelfPermission(
-            context, 
-            android.Manifest.permission.RECORD_AUDIO
-        ) == PackageManager.PERMISSION_GRANTED
     }
 }

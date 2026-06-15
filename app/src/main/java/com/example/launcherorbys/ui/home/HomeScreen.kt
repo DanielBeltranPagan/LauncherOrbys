@@ -19,36 +19,43 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import coil.compose.AsyncImage
 import com.example.launcherorbys.ui.status.StatusBar
 import com.example.launcherorbys.ui.theme.Dimens
 import com.example.launcherorbys.utils.Constants
 
 /**
  * Pantalla de inicio principal del Launcher.
- * Gestiona la visualización del fondo, gestos de usuario y estados globales de la UI.
+ *
+ * Esta es la raíz de la interfaz de usuario. Gestiona:
+ * - El renderizado del fondo (imagen o color sólido).
+ * - La barra de estado superior ([StatusBar]).
+ * - Los gestos globales (tap para cerrar menús abiertos).
+ * - La escucha de cambios de posición de la barra de navegación mediante [BroadcastReceiver].
+ *
+ * @param modelo El [MainViewModel] que contiene el estado global de la aplicación.
+ * @param alSolicitarBluetooth Callback que se propaga a la [StatusBar] para gestionar permisos de Bluetooth.
  */
 @Composable
 fun HomeScreen(
-    viewModel: MainViewModel,
-    onBluetoothRequest: () -> Unit
+    modelo: MainViewModel,
+    alSolicitarBluetooth: () -> Unit
 ) {
-    val context = LocalContext.current
+    val contexto = LocalContext.current
 
-    // Sincronización con eventos de la barra de navegación del sistema
-    DisposableEffect(context) {
-        val receiver = object : BroadcastReceiver() {
-            override fun onReceive(context: Context?, intent: Intent?) {
+    DisposableEffect(contexto) {
+        val receptor = object : BroadcastReceiver() {
+            override fun onReceive(contexto: Context?, intent: Intent?) {
                 if (intent?.action == Constants.ACTION_NAVBAR_POSITION_CHANGED) {
-                    viewModel.navBarAtTop = intent.getBooleanExtra("atTop", false)
+                    modelo.navBarEnLaParteSuperior = intent.getBooleanExtra("atTop", false)
                 }
             }
         }
-        val filter = IntentFilter(Constants.ACTION_NAVBAR_POSITION_CHANGED)
-        ContextCompat.registerReceiver(context, receiver, filter, ContextCompat.RECEIVER_EXPORTED)
+        val filtro = IntentFilter(Constants.ACTION_NAVBAR_POSITION_CHANGED)
+        ContextCompat.registerReceiver(contexto, receptor, filtro, ContextCompat.RECEIVER_EXPORTED)
         onDispose {
-            try { context.unregisterReceiver(receiver) } catch (e: Exception) {}
+            try { contexto.unregisterReceiver(receptor) } catch (e: Exception) {}
         }
     }
     
@@ -57,43 +64,37 @@ fun HomeScreen(
             .fillMaxSize()
             .pointerInput(Unit) {
                 detectTapGestures(
-                    onTap = { viewModel.cerrarTodo() }
+                    onTap = { modelo.cerrarTodo() }
                 )
             },
-        color = viewModel.colorSolido ?: Color.Transparent
+        color = modelo.colorSolido ?: Color.Transparent
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
-            // Renderizado del fondo de pantalla
-            WallpaperContainer(viewModel)
+            ContenedorFondo(modelo)
 
-            val statusBarPadding = if (viewModel.navBarAtTop) Dimens.StatusBarPaddingTopNavAtTop else Dimens.StatusBarPaddingTop
+            val rellenoBarraEstado = if (modelo.navBarEnLaParteSuperior) Dimens.StatusBarPaddingTopNavAtTop else Dimens.StatusBarPaddingTop
 
             StatusBar(
                 modifier = Modifier
                     .align(Alignment.TopCenter)
-                    .padding(top = statusBarPadding),
-                onBluetoothRequest = onBluetoothRequest
+                    .padding(top = rellenoBarraEstado),
+                alSolicitarBluetooth = alSolicitarBluetooth
             )
         }
     }
 }
 
+/**
+ * Contenedor encargado de cargar y renderizar la imagen de fondo personalizada.
+ */
 @Composable
-private fun WallpaperContainer(viewModel: MainViewModel) {
-    val context = LocalContext.current
-    viewModel.uriImagenFondo?.let { uri ->
-        val bitmap = remember(uri) { 
-            try {
-                context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it) }
-            } catch (e: Exception) { null }
-        }
-        bitmap?.let {
-            Image(
-                bitmap = it.asImageBitmap(),
-                contentDescription = null,
-                modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop
-            )
-        }
+private fun ContenedorFondo(modelo: MainViewModel) {
+    modelo.uriImagenFondo?.let { uri ->
+        AsyncImage(
+            model = uri,
+            contentDescription = null,
+            modifier = Modifier.fillMaxSize(),
+            contentScale = ContentScale.Crop
+        )
     }
 }
