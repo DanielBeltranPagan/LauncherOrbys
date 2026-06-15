@@ -1,10 +1,10 @@
 package com.example.launcherorbys.managers
 
+import android.bluetooth.BluetoothAdapter
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.media.AudioManager
-import android.net.ConnectivityManager
-import android.net.NetworkCapabilities
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
@@ -45,11 +45,7 @@ class SystemControlManager(private val context: Context) {
         if (maxVol > 0) {
             currentVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC).toFloat() / maxVol
         }
-        isMuted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            audioManager.isStreamMute(AudioManager.STREAM_MUSIC) 
-        } else {
-            audioManager.getStreamVolume(AudioManager.STREAM_MUSIC) == 0
-        }
+        isMuted = audioManager.isStreamMute(AudioManager.STREAM_MUSIC)
     }
 
     private fun actualizarBrillo() {
@@ -100,33 +96,9 @@ class SystemControlManager(private val context: Context) {
      * En Android 13+ el toggle directo suele estar restringido, por lo que abrirá ajustes si falla.
      */
     fun toggleBluetooth() {
-        val bm = context.getSystemService(Context.BLUETOOTH_SERVICE) as? android.bluetooth.BluetoothManager
-        val adapter = bm?.adapter ?: return
-
-        val hasPermission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            context.checkSelfPermission(android.Manifest.permission.BLUETOOTH_CONNECT) == android.content.pm.PackageManager.PERMISSION_GRANTED
-        } else true
-
-        if (!hasPermission) return // OverlayManager detectará esto y pedirá permiso
-
-        try {
-            @Suppress("DEPRECATION")
-            val success = if (adapter.isEnabled) {
-                adapter.disable()
-            } else {
-                adapter.enable()
-            }
-            
-            if (!success) {
-                // Si el toggle directo falla (común en Android 13+), abrimos ajustes
-                abrirAjustesBT()
-            } else {
-                // Actualizar estado local (aunque el broadcast de sistema lo hará después)
-                isBluetoothOn = !adapter.isEnabled
-            }
-        } catch (e: Exception) {
-            abrirAjustesBT()
-        }
+        // Forzamos siempre la apertura de los ajustes para evitar el aviso de "120 segundos"
+        // y porque en Android moderno el toggle directo falla casi siempre.
+        abrirSwitchBarBT()
     }
 
     fun cambiarBrillo(valor: Float) {
@@ -168,13 +140,8 @@ class SystemControlManager(private val context: Context) {
      */
     fun toggleMute() {
         isMuted = !isMuted
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            val action = if (isMuted) AudioManager.ADJUST_MUTE else AudioManager.ADJUST_UNMUTE
-            audioManager.adjustStreamVolume(AudioManager.STREAM_MUSIC, action, 0)
-        } else {
-            @Suppress("DEPRECATION")
-            audioManager.setStreamMute(AudioManager.STREAM_MUSIC, isMuted)
-        }
+        val action = if (isMuted) AudioManager.ADJUST_MUTE else AudioManager.ADJUST_UNMUTE
+        audioManager.adjustStreamVolume(AudioManager.STREAM_MUSIC, action, 0)
     }
 
     // --- Métodos de Apertura de Ajustes ---
@@ -189,29 +156,42 @@ class SystemControlManager(private val context: Context) {
     }
 
     fun abrirAjustesBT() {
-        val intents = listOf(
-            // 1. Intent con extras para forzar el fragmento de Bluetooth (muy efectivo en Android 10-14)
-            Intent(Settings.ACTION_BLUETOOTH_SETTINGS).apply {
-                putExtra(":settings:show_fragment", "com.android.settings.bluetooth.BluetoothSettings")
-                putExtra(":android:show_fragment", "com.android.settings.bluetooth.BluetoothSettings")
-            },
-            // 2. Intento directo al componente interno
-            Intent().apply {
-                setComponent(android.content.ComponentName("com.android.settings", "com.android.settings.Settings\$BluetoothSettingsActivity"))
-            },
-            // 3. Acción estándar de Bluetooth
-            Intent(Settings.ACTION_BLUETOOTH_SETTINGS),
-            // 4. Acción alternativa (Connected Devices) que a veces contiene Bluetooth en Android 12+
-            Intent("android.settings.CONNECTED_DEVICE_SETTINGS")
-        )
+        try {
+            val intent = Intent().apply {
+                component = ComponentName(
+                    "com.android.settings",
+                    "com.android.settings.Settings\$BluetoothSettingsActivity"
+                )
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+        } catch (e: Exception) {
+            abrirAjustesBT() // Llama a la opción 1 si rompe por temas de permisos
+        }
+    }
 
-        for (intent in intents) {
+    /**
+     * Abre el panel de control de Bluetooth (disponible desde Android 10+).
+     * Si falla, intenta el panel de conectividad general antes de ir a ajustes completos.
+     */
+    fun abrirSwitchBarBT() {
+        try {
+            // Intentamos el panel flotante específico de Bluetooth (Android 10+)
+            val intent = Intent("android.settings.panel.action.BLUETOOTH").apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+        } catch (e: Exception) {
             try {
-                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                intent.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+                // Si el panel de BT no existe, intentamos el de conectividad (Android 12+)
+                val intent = Intent("android.settings.panel.action.INTERNET_CONNECTIVITY").apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
                 context.startActivity(intent)
-                return
-            } catch (e: Exception) {}
+            } catch (e2: Exception) {
+                // Si nada funciona, vamos a la pantalla de ajustes con los extras de fragmento
+                abrirAjustesBT()
+            }
         }
     }
 

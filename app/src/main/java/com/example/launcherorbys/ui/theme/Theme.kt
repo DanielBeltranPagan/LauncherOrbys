@@ -31,14 +31,27 @@ private val LightColorScheme = lightColorScheme(
 )
 
 /**
- * Tema principal de la aplicación.
- * Configura los colores de Material Design 3 y ajusta las barras del sistema.
+ * Tema principal de la aplicación LauncherOrbys.
+ *
+ * Configura los esquemas de color de Material Design 3, la tipografía global y los estilos
+ * de las barras del sistema (StatusBar y NavigationBar).
+ *
+ * Esta función composable centraliza la apariencia visual de toda la aplicación, manejando
+ * automáticamente el cambio entre temas claro y oscuro, así como el soporte para colores
+ * dinámicos (Material You) en dispositivos compatibles.
+ *
+ * @param darkTheme Indica si se debe aplicar el esquema de colores oscuro. Por defecto usa [isSystemInDarkTheme].
+ * @param dynamicColor Indica si se deben habilitar los colores dinámicos basados en el fondo de pantalla
+ *                     del sistema (disponible en Android 12+).
+ * @param baseWeight El peso de fuente base que se aplicará a la tipografía del sistema.
+ * @param content El contenido Composable que se renderizará bajo este tema.
  */
 @Composable
 fun LauncherOrbysTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     // Los colores dinámicos (Material You) están disponibles en Android 12+
     dynamicColor: Boolean = true,
+    baseWeight: androidx.compose.ui.text.font.FontWeight = androidx.compose.ui.text.font.FontWeight.Normal,
     content: @Composable () -> Unit
 ) {
     // Selección del esquema de colores basado en la versión de Android y preferencia del usuario
@@ -70,6 +83,7 @@ fun LauncherOrbysTheme(
 
     MaterialTheme(
         colorScheme = colorScheme,
+        typography = getAppTypography(baseWeight),
         content = content
     )
 }

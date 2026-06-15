@@ -29,14 +29,24 @@ import java.text.SimpleDateFormat
 import java.util.*
 
 /**
- * Servicio encargado de capturar la pantalla y el audio del sistema/micrófono.
- * Se ejecuta como un servicio de primer plano (Foreground Service) para cumplir con las políticas de Android.
+ * Servicio encargado de capturar la pantalla y el audio del sistema o micrófono.
+ *
+ * Se ejecuta como un **Foreground Service** para garantizar que el sistema no lo finalice
+ * durante la grabación y para cumplir con los requisitos de seguridad de Android para el uso
+ * de la API [MediaProjection].
+ *
+ * Soporta grabación en dispositivos desde Android 7.0 (Nougat) hasta las versiones más recientes,
+ * manejando adecuadamente los permisos de almacenamiento y audio según la versión del SDK.
  */
 class ScreenRecordService : Service() {
 
+    /** Instancia de proyección de medios obtenida tras el consentimiento del usuario. */
     private var mediaProjection: MediaProjection? = null
+    /** Grabador multimedia encargado de codificar y guardar el vídeo. */
     private var mediaRecorder: MediaRecorder? = null
+    /** Pantalla virtual donde se renderiza la captura de pantalla para el [mediaRecorder]. */
     private var virtualDisplay: VirtualDisplay? = null
+    /** URI del archivo de vídeo donde se está guardando la grabación. */
     private var videoUri: Uri? = null
     
     private var screenWidth = 720
@@ -50,6 +60,10 @@ class ScreenRecordService : Service() {
         initDimensions()
     }
 
+    /**
+     * Inicializa las dimensiones de captura basadas en la resolución real del dispositivo.
+     * Ajusta los valores a múltiplos de 2 para compatibilidad con codificadores de vídeo.
+     */
     private fun initDimensions() {
         val windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
@@ -67,6 +81,14 @@ class ScreenRecordService : Service() {
         }
     }
 
+    /**
+     * Procesa la intención de inicio para comenzar la grabación.
+     * 
+     * @param intent El [Intent] que contiene el `resultCode` y el `data` de la proyección.
+     * @param flags Parámetros adicionales sobre la solicitud de inicio.
+     * @param startId Un identificador único para esta solicitud de inicio.
+     * @return Indica cómo debe comportarse el servicio si el sistema lo mata.
+     */
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val resultCode = intent?.getIntExtra("resultCode", Activity.RESULT_CANCELED) ?: Activity.RESULT_CANCELED
         val data = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -92,6 +114,10 @@ class ScreenRecordService : Service() {
         return START_NOT_STICKY
     }
 
+    /**
+     * Crea y muestra la notificación persistente necesaria para el servicio de primer plano.
+     * En Android 10+ incluye los tipos de servicio específicos para proyección de medios y micrófono.
+     */
     private fun startForegroundNotification() {
         val channelId = "screen_record_channel"
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -120,6 +146,10 @@ class ScreenRecordService : Service() {
         }
     }
 
+    /**
+     * Configura la sesión de [MediaProjection] y registra un callback para detener el servicio
+     * si la proyección finaliza externamente.
+     */
     private fun setupMediaProjection(resultCode: Int, data: Intent) {
         val mpm = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
         mediaProjection = mpm.getMediaProjection(resultCode, data)
@@ -130,6 +160,10 @@ class ScreenRecordService : Service() {
         }, Handler(Looper.getMainLooper()))
     }
 
+    /**
+     * Inicia el proceso de grabación configurando el [MediaRecorder] y creando la [VirtualDisplay].
+     * Maneja el almacenamiento de archivos de forma diferente para versiones anteriores y posteriores a Android 10 (Scoped Storage).
+     */
     private fun startRecording() {
         val fileName = "Orbys_${SimpleDateFormat("yyyyMMdd_HHmm", Locale.getDefault()).format(Date())}.mp4"
         val hasAudio = ContextCompat.checkSelfPermission(this, android.Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
@@ -173,6 +207,10 @@ class ScreenRecordService : Service() {
         sendBroadcast(Intent(Constants.ACTION_RECORDING_STARTED))
     }
 
+    /**
+     * Detiene la grabación y libera todos los recursos (MediaRecorder, VirtualDisplay, MediaProjection).
+     * Si se usó Scoped Storage, marca el archivo de vídeo como completado (IS_PENDING = 0).
+     */
     override fun onDestroy() {
         try {
             mediaRecorder?.apply {

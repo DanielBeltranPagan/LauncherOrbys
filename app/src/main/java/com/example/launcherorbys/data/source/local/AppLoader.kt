@@ -6,15 +6,24 @@ import android.content.pm.ApplicationInfo
 import com.example.launcherorbys.data.model.AppInfo
 
 /**
- * Cargador de datos encargado de consultar el sistema Android para obtener las aplicaciones instaladas.
- * Utiliza el PackageManager para filtrar solo aquellas que pueden ser lanzadas por el usuario.
+ * Proveedor de datos encargado de interactuar con el sistema Android para extraer información
+ * sobre las aplicaciones instaladas.
+ *
+ * Esta clase encapsula el uso del [android.content.pm.PackageManager] para filtrar y obtener
+ * solo las aplicaciones que son relevantes para el Launcher (aquellas con una actividad principal).
+ *
+ * @property context El contexto necesario para acceder al [android.content.pm.PackageManager].
  */
 class AppLoader(private val context: Context) {
 
     /**
-     * Recupera todas las aplicaciones instaladas que tienen una actividad principal con la categoría LAUNCHER.
-     * 
-     * @return Una lista de objetos [AppInfo] ordenada alfabéticamente por etiqueta.
+     * Consulta el sistema para obtener la lista de aplicaciones que pueden ser ejecutadas por el usuario.
+     *
+     * Utiliza una intención con acción [Intent.ACTION_MAIN] y categoría [Intent.CATEGORY_LAUNCHER]
+     * para identificar las "puertas de entrada" a las aplicaciones instaladas.
+     *
+     * @return Una lista de objetos [AppInfo] conteniendo el nombre, paquete, icono y estado de
+     *         desinstalación, ordenada alfabéticamente ignorando mayúsculas.
      */
     fun loadInstalledApps(): List<AppInfo> {
         try {

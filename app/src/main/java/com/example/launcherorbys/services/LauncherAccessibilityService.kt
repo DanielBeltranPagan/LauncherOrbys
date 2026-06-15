@@ -3,8 +3,6 @@ package com.example.launcherorbys.services
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.content.BroadcastReceiver
-import android.content.ClipData
-import android.content.ClipboardManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
@@ -21,20 +19,36 @@ import androidx.lifecycle.viewmodel.MutableCreationExtras
 import androidx.savedstate.SavedStateRegistry
 import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
+import com.example.launcherorbys.data.repository.SettingsRepository
 import com.example.launcherorbys.managers.AppLauncher
 import com.example.launcherorbys.managers.OverlayManager
 import com.example.launcherorbys.managers.SystemControlManager
 import com.example.launcherorbys.utils.Constants
+import kotlinx.coroutines.launch
 
 /**
- * Servicio de Accesibilidad que actúa como el núcleo del Launcher Orbys.
- * Proporciona el contexto necesario para los Overlays y escucha eventos globales del sistema.
+ * Servicio de Accesibilidad que actúa como el motor central del Launcher Orbys.
+ *
+ * Este servicio es fundamental para el funcionamiento del launcher, ya que permite:
+ * - Dibujar superposiciones (Overlays) sobre otras aplicaciones.
+ * - Detectar cuándo se abren o cierran aplicaciones para gestionar la visibilidad de la barra de navegación.
+ * - Interceptar eventos de teclas globales (como el botón Home o Recientes) para asegurar la experiencia del launcher.
+ * - Ejecutar acciones de sistema (volver atrás, ir a home, abrir notificaciones) sin necesidad de root.
+ * - Sincronizar el estado de grabación de pantalla mediante la lectura de notificaciones del sistema.
+ *
+ * Implementa múltiples interfaces de ciclo de vida de Android para permitir la integración
+ * fluida con Jetpack Compose dentro de los Overlays.
  */
 class LauncherAccessibilityService : AccessibilityService(), LifecycleOwner, SavedStateRegistryOwner, ViewModelStoreOwner, HasDefaultViewModelProviderFactory {
 
     // --- Gestores de Lógica ---
+    /** Repositorio para acceder a las configuraciones persistentes. */
+    private lateinit var settingsRepository: SettingsRepository
+    /** Gestor de controles de hardware y ajustes de sistema (brillo, volumen). */
     private lateinit var systemManager: SystemControlManager
+    /** Gestor encargado de la creación y mantenimiento de las ventanas flotantes (UI). */
     private lateinit var overlayManager: OverlayManager
+    /** Gestor para lanzar aplicaciones y gestionar el historial. */
     private lateinit var appLauncher: AppLauncher
 
     // --- Implementación de Ciclo de Vida para Compose ---
@@ -55,10 +69,12 @@ class LauncherAccessibilityService : AccessibilityService(), LifecycleOwner, Sav
             set(ViewModelProvider.AndroidViewModelFactory.APPLICATION_KEY, application)
         }
 
+    /** Nombre del paquete de la última aplicación detectada en primer plano. */
     private var lastPackageName: String? = null
 
     /**
-     * Receptor central para coordinar acciones entre componentes del Launcher y el sistema.
+     * Receptor de transmisiones encargado de coordinar la comunicación entre la
+     * actividad principal y este servicio de fondo.
      */
     private val receptorComandos = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -101,14 +117,17 @@ class LauncherAccessibilityService : AccessibilityService(), LifecycleOwner, Sav
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_CREATE)
 
         // Inicializar gestores de lógica
+        settingsRepository = SettingsRepository(this)
         appLauncher = AppLauncher(this)
         systemManager = SystemControlManager(this)
         overlayManager = OverlayManager(this, systemManager, appLauncher)
 
-        // Cargar tema inicial
-        val esClaro = getSharedPreferences(Constants.PREFS_NAME, MODE_PRIVATE)
-            .getBoolean(Constants.KEY_IS_LIGHT_THEME, true)
-        overlayManager.actualizarColores(esClaro)
+        // Observar cambios de tema desde DataStore
+        lifecycleScope.launch {
+            settingsRepository.esClaroFlow.collect { esClaro ->
+                overlayManager.actualizarColores(esClaro)
+            }
+        }
     }
 
     override fun onServiceConnected() {
@@ -160,7 +179,7 @@ class LauncherAccessibilityService : AccessibilityService(), LifecycleOwner, Sav
         } catch (_: Exception) {}
 
         if (::overlayManager.isInitialized) {
-            overlayManager.onConfigurationChanged()
+            overlayManager.onConfigurationChanged(newConfig)
         }
     }
 

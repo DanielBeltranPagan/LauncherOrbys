@@ -98,8 +98,8 @@ class AppDrawerViewModel(application: Application) : AndroidViewModel(applicatio
                 return@launch
             }
 
-            // Pequeño debounce para no saturar con cada letra
-            delay(150)
+            // Debounce de 1.3 segundos para no saturar con cada letra (Evita peticiones excesivas)
+            delay(1300)
 
             val normalizedQuery = query.normalize()
             

@@ -7,8 +7,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
+import androidx.core.net.toUri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.launcherorbys.data.repository.SettingsRepository
 import com.example.launcherorbys.managers.PermissionManager
 import com.example.launcherorbys.utils.Constants
 import kotlinx.coroutines.delay
@@ -22,21 +24,69 @@ import kotlinx.coroutines.launch
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     
     private val permissionManager = PermissionManager(application)
+    private val settingsRepository = SettingsRepository(application)
 
     // --- Estados de Apariencia ---
     var uriImagenFondo by mutableStateOf<Uri?>(null)
     var colorSolido by mutableStateOf<Color?>(null)
-    var esTemaClaro by mutableStateOf(true)
-    var navBarAtTop by mutableStateOf(false)
+    var esTemaClaro by mutableStateOf(value = true)
+    var navBarAtTop by mutableStateOf(value = false)
 
     // --- Estados de Permisos ---
-    var isDefaultLauncher by mutableStateOf(false)
-    var isAccessibilityEnabled by mutableStateOf(false)
-    var canWriteSettings by mutableStateOf(false)
-    var hasBluetoothPermission by mutableStateOf(false)
+    var isDefaultLauncher by mutableStateOf(value = false)
+    var isAccessibilityEnabled by mutableStateOf(value = false)
+    var canWriteSettings by mutableStateOf(value = false)
+    var hasBluetoothPermission by mutableStateOf(value = false)
 
     init {
         updatePermissionStates()
+        observeSettings()
+    }
+
+    /**
+     * Observa los cambios en las preferencias guardadas en DataStore.
+     */
+    private fun observeSettings() {
+        viewModelScope.launch {
+            settingsRepository.fondoFlow.collect { fondo ->
+                if (fondo.isNullOrEmpty()) {
+                    setBackground(null, null)
+                } else {
+                    if (fondo.startsWith("content://")) {
+                        setBackground(fondo.toUri(), null)
+                    } else {
+                        try {
+                            setBackground(null, Color(fondo.toULong()))
+                        } catch (_: Exception) {
+                            setBackground(null, null)
+                        }
+                    }
+                }
+            }
+        }
+        viewModelScope.launch {
+            settingsRepository.esClaroFlow.collect { isLight ->
+                updateTheme(isLight)
+            }
+        }
+    }
+
+    /**
+     * Guarda la preferencia de tema de forma persistente.
+     */
+    fun persistEsClaro(isLight: Boolean) {
+        viewModelScope.launch {
+            settingsRepository.saveEsClaro(isLight)
+        }
+    }
+
+    /**
+     * Guarda la configuración de fondo de forma persistente.
+     */
+    fun persistFondo(fondo: String) {
+        viewModelScope.launch {
+            settingsRepository.saveFondo(fondo)
+        }
     }
 
     /**

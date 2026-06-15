@@ -19,6 +19,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ViewModelStoreOwner
@@ -50,8 +53,10 @@ class OverlayManager(
 
     // Estado observable para forzar la actualización de recursos cuando cambia la configuración (idioma, etc.)
     private var configurationTick by mutableIntStateOf(0)
+    private var currentConfig by mutableStateOf(Configuration(service.resources.configuration))
 
-    fun onConfigurationChanged() {
+    fun onConfigurationChanged(newConfig: Configuration) {
+        currentConfig = Configuration(newConfig)
         configurationTick++
         // Actualizamos los parámetros de todas las vistas para que el sistema refresque sus recursos
         if (::vistaNav.isInitialized) setupBarraNavegacion()
@@ -82,6 +87,18 @@ class OverlayManager(
     
     private var sideNavHeightLeft by mutableIntStateOf(0)
     private var sideNavHeightRight by mutableIntStateOf(0)
+
+    // Control de tiempo para el delay de 1.3 segundos
+    private var lastDrawerActionTime = 0L
+
+    private fun canToggleDrawer(): Boolean {
+        val now = System.currentTimeMillis()
+        if (now - lastDrawerActionTime >= 1300L) {
+            lastDrawerActionTime = now
+            return true
+        }
+        return false
+    }
 
     /**
      * Despliega todas las capas visuales necesarias.
@@ -146,6 +163,8 @@ class OverlayManager(
     }
 
     fun toggleDrawer() {
+        if (!canToggleDrawer()) return
+
         if (!drawerVisible) {
             // Cada vez que se abre, forzamos actualización de configuración
             configurationTick++ 
@@ -367,21 +386,21 @@ class OverlayManager(
         } else true
 
         if (!hasPermission) {
-            // Logica para forzar la aparición del diálogo de permiso en MainActivity
+            // 1. Intent directo para abrir la actividad
             val intent = Intent(service, com.example.launcherorbys.MainActivity::class.java).apply {
                 action = Constants.ACTION_REQUEST_BLUETOOTH
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
-                addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
             }
             service.startActivity(intent)
             
-            // Cerramos el panel para que el usuario vea la actividad
+            // 2. Broadcast de respaldo por si la actividad ya está visible pero en segundo plano
+            service.sendBroadcast(Intent(Constants.ACTION_REQUEST_BLUETOOTH).setPackage(service.packageName))
+            
             if (systemOptionsVisible) toggleSystemOptions()
             return
         }
 
-        // Si ya tiene permiso, vamos directo a la pantalla de Bluetooth
+        // Si ya tiene permiso, vamos directo a la pestaña de Bluetooth detectada en el logcat
         systemManager.abrirAjustesBT()
 
         if (systemOptionsVisible) toggleSystemOptions()
@@ -503,11 +522,27 @@ class OverlayManager(
             setViewTreeSavedStateRegistryOwner(service as SavedStateRegistryOwner)
             setViewTreeViewModelStoreOwner(service as ViewModelStoreOwner)
             setContent { 
-                val configuration = LocalConfiguration.current
-                // La clave del locale asegura que Compose invalide TODO lo que dependa de recursos.
-                key(configuration.locales[0].language, configurationTick) {
-                    LauncherOrbysTheme(darkTheme = navBarBackground == Color.White) { 
-                        content() 
+                val config = currentConfig
+                val fontScale = config.fontScale
+                val boldText = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    config.fontWeightAdjustment
+                } else 0
+                
+                // Forzamos manualmente la densidad para que Compose use el fontScale actualizado
+                val densityValue = service.resources.displayMetrics.density
+                val customDensity = Density(densityValue, fontScale)
+
+                key(config.locales[0].language, configurationTick, fontScale, boldText) {
+                    CompositionLocalProvider(
+                        LocalConfiguration provides config,
+                        LocalDensity provides customDensity
+                    ) {
+                        LauncherOrbysTheme(
+                            darkTheme = navBarBackground == Color.White,
+                            baseWeight = if (boldText > 0) FontWeight.Bold else FontWeight.Normal
+                        ) {
+                            content() 
+                        }
                     }
                 }
             }

@@ -28,7 +28,6 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.compose.ui.res.stringResource
-import com.example.launcherorbys.data.repository.SettingsRepository
 import com.example.launcherorbys.managers.PermissionManager
 import com.example.launcherorbys.ui.home.HomeScreen
 import com.example.launcherorbys.ui.home.MainViewModel
@@ -40,21 +39,36 @@ import com.example.launcherorbys.utils.Constants
 
 /**
  * Actividad principal del Launcher Orbys.
- * Actúa como host de la UI base y punto de entrada para configuraciones críticas.
+ *
+ * Esta clase sirve como el host principal para la interfaz de usuario basada en Jetpack Compose
+ * y coordina la lógica de inicialización, gestión de permisos críticos y respuesta a eventos
+ * del sistema.
+ *
+ * **Responsabilidades:**
+ * - Configurar la visualización "Full Screen" ocultando las barras del sistema.
+ * - Gestionar el flujo de permisos iniciales (Launcher por defecto, Accesibilidad, Ajustes del sistema).
+ * - Manejar solicitudes "On-Demand" de permisos para funcionalidades específicas como grabación de audio o Bluetooth.
+ * - Escuchar cambios en el fondo de pantalla para adaptar el tema visual.
+ * - Actuar como receptor de comandos internos mediante transmisiones (Broadcasts).
  */
 class MainActivity : ComponentActivity() {
 
-    private lateinit var settingsRepository: SettingsRepository
+    /** Gestor encargado de verificar el estado de los permisos de sistema. */
     private lateinit var permissionManager: PermissionManager
+    /** ViewModel que mantiene el estado global de la pantalla de inicio. */
     private val viewModel: MainViewModel by viewModels()
 
     // --- Estados Locales de UI On-Demand ---
+    /** Controla la visibilidad del diálogo de permiso de audio. */
     private var showAudioDialog by mutableStateOf(false)
+    /** Controla la visibilidad del diálogo de permiso/ajustes de Bluetooth. */
     private var showBluetoothDialog by mutableStateOf(false)
+    /** Almacena temporalmente el intento de captura de pantalla mientras se solicita permiso de audio. */
     private var pendingRecordingIntent by mutableStateOf<Intent?>(null)
 
     // --- Registradores de Resultados de Actividad ---
 
+    /** Registrador para la solicitud del permiso de grabación de audio. */
     private val requestAudioLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { _ ->
@@ -63,17 +77,18 @@ class MainActivity : ComponentActivity() {
         pendingRecordingIntent = null
     }
 
+    /** Registrador para la solicitud del permiso de conexión Bluetooth (Android 12+). */
     private val requestBluetoothLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
         if (granted) {
-            // Permiso concedido, abrir ajustes de Bluetooth
             openBluetoothSettings()
         }
         viewModel.updatePermissionStates()
         showBluetoothDialog = false
     }
 
+    /** Registrador para el resultado de la solicitud de captura de pantalla del sistema. */
     private val screenCaptureLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
@@ -95,17 +110,17 @@ class MainActivity : ComponentActivity() {
                 Constants.ACTION_REQUEST_BLUETOOTH -> {
                     // Acción inmediata: Forzar la visibilidad del diálogo
                     showBluetoothDialog = true
+                    viewModel.updatePermissionStates()
                     
-                    // Forzar que la actividad se ponga al frente de forma absoluta
+                    // Forzar que la actividad se ponga al frente
                     val it = Intent(this@MainActivity, MainActivity::class.java).apply {
-                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_SINGLE_TOP)
                     }
                     startActivity(it)
                 }
                 Intent.ACTION_WALLPAPER_CHANGED -> {
-                    viewModel.setBackground(null, null)
-                    settingsRepository.saveFondo("")
-                    settingsRepository.saveEsClaro(true)
+                    viewModel.persistFondo("")
+                    viewModel.persistEsClaro(true)
                 }
             }
         }
@@ -115,11 +130,9 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        settingsRepository = SettingsRepository(this)
         permissionManager = PermissionManager(this)
 
         setupSystemUI()
-        loadPreferences()
         registerReceivers()
         setupWallpaperListener()
 
@@ -128,7 +141,14 @@ class MainActivity : ComponentActivity() {
         onBackPressedDispatcher.addCallback(this) { /* Bloquear o manejar cierre */ }
 
         setContent {
-            LauncherOrbysTheme(darkTheme = !viewModel.esTemaClaro) {
+            val config = androidx.compose.ui.platform.LocalConfiguration.current
+            val fontScale = config.fontScale
+            val boldText = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) config.fontWeightAdjustment else 0
+
+            LauncherOrbysTheme(
+                darkTheme = !viewModel.esTemaClaro,
+                baseWeight = if (boldText > 0) androidx.compose.ui.text.font.FontWeight.Bold else androidx.compose.ui.text.font.FontWeight.Normal
+            ) {
                 CompositionLocalProvider(LocalOverscrollConfiguration provides null) {
 
                     HomeScreen(
@@ -235,20 +255,25 @@ class MainActivity : ComponentActivity() {
 
     private fun openBluetoothSettings() {
         val intents = listOf(
+            // Intent definitivo basado en el ID de pantalla: bluetooth_switchbar_screen
             Intent(Settings.ACTION_BLUETOOTH_SETTINGS).apply {
-                putExtra(":settings:show_fragment", "com.android.settings.bluetooth.BluetoothSettings")
-                putExtra(":android:show_fragment", "com.android.settings.bluetooth.BluetoothSettings")
+                putExtra(":settings:show_fragment", "com.android.settings.bluetooth.BluetoothDashboardFragment")
+                putExtra(":settings:fragment_args_key", "bluetooth_switchbar_screen")
+                putExtra(":android:show_fragment", "com.android.settings.bluetooth.BluetoothDashboardFragment")
+                putExtra(":android:show_fragment_args", android.os.Bundle().apply {
+                    putString("category", "bluetooth_switchbar_screen")
+                    putString(":settings:fragment_args_key", "bluetooth_switchbar_screen")
+                })
             },
             Intent().apply {
                 setComponent(android.content.ComponentName("com.android.settings", "com.android.settings.Settings\$BluetoothSettingsActivity"))
             },
-            Intent(Settings.ACTION_BLUETOOTH_SETTINGS),
-            Intent(Settings.ACTION_SETTINGS)
+            Intent(Settings.ACTION_BLUETOOTH_SETTINGS)
         )
 
         for (intent in intents) {
             try {
-                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_CLEAR_TOP)
                 startActivity(intent)
                 return
             } catch (e: Exception) {}
@@ -287,17 +312,8 @@ class MainActivity : ComponentActivity() {
             } else true
 
             viewModel.updateTheme(isLight)
-            settingsRepository.saveEsClaro(isLight)
+            viewModel.persistEsClaro(isLight)
             sendBroadcast(Intent(Constants.ACTION_THEME_CHANGED).putExtra("esClaro", isLight))
-        }
-    }
-
-    private fun loadPreferences() {
-        val fondoStr = settingsRepository.getFondo()
-        viewModel.updateTheme(settingsRepository.getEsClaro())
-        fondoStr?.takeIf { it.isNotEmpty() }?.let {
-            if (it.startsWith("content://")) viewModel.setBackground(Uri.parse(it), null)
-            else try { viewModel.setBackground(null, Color(it.toULong())) } catch (_: Exception) {}
         }
     }
 
@@ -324,8 +340,6 @@ class MainActivity : ComponentActivity() {
             }
             Constants.ACTION_REQUEST_BLUETOOTH -> {
                 showBluetoothDialog = true
-                // Limpiar la acción para que no se repita al rotar o volver
-                intent.action = null
             }
         }
     }

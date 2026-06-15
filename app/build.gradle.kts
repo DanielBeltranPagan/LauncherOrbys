@@ -2,6 +2,7 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.dokka)
 }
 
 android {
@@ -12,13 +13,21 @@ android {
         applicationId = "com.example.launcherorbys"
         minSdk = 24 // Compatible desde Android 7.0 Nougat
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 5
+        versionName = "1.5"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     buildTypes {
+//        debug{
+//            isMinifyEnabled = true
+//            isShrinkResources = true
+//            proguardFiles(
+//                getDefaultProguardFile("proguard-android-optimize.txt"),
+//                "proguard-rules.pro"
+//            )
+//        }
         release {
             isMinifyEnabled = true
             isShrinkResources = true
@@ -64,6 +73,7 @@ dependencies {
     implementation(libs.androidx.appcompat)
     implementation(libs.material)
     implementation(libs.androidx.savedstate.ktx)
+    implementation(libs.androidx.datastore.preferences)
 
     // Pruebas
     testImplementation(libs.junit)
@@ -73,4 +83,24 @@ dependencies {
     androidTestImplementation(libs.androidx.ui.test.junit4)
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
+
+    // Dokka
+    dokkaPlugin(libs.dokka.android.documentation)
+}
+
+dokka {
+    dokkaPublications.html {
+        moduleName.set("LauncherOrbys")
+        // Incluimos una descripción general del proyecto desde el README
+        includes.from(project.layout.projectDirectory.file("../README.md"))
+        
+        // Configuramos para que no falle si falta alguna documentación, pero avise
+        failOnWarning.set(false)
+    }
+    dokkaSourceSets.configureEach {
+        suppressGeneratedFiles.set(true)
+        
+        // Dokka 2.2.0 ya configura automáticamente links para SDK y Kotlin.
+        // Si tuvieras bibliotecas extra, las registrarías en dokkaPublications.html
+    }
 }

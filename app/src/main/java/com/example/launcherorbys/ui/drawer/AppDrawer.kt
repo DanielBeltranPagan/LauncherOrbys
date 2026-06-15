@@ -102,7 +102,10 @@ fun AppDrawer(
             .clip(RoundedCornerShape(Dimens.RadiusExtraLarge))
             .background(Color.Black.copy(alpha = 0.7f))
             .pointerInput(Unit) { 
-                detectTapGestures { viewModel.selectPackage(null) } 
+                detectTapGestures { 
+                    viewModel.selectPackage(null)
+                    onClose()
+                }
             }
     ) {
         Column(modifier = Modifier.padding(Dimens.PaddingSmall)) {
@@ -147,7 +150,7 @@ private fun SearchBar(
             Text(
                 stringResource(R.string.drawer_search_placeholder), 
                 color = Color.White.copy(alpha = 0.5f), 
-                style = MaterialTheme.typography.bodySmall
+                style = MaterialTheme.typography.labelMedium
             ) 
         },
         leadingIcon = { 
@@ -155,7 +158,7 @@ private fun SearchBar(
         },
         singleLine = true,
         shape = RoundedCornerShape(Dimens.RadiusLarge),
-        textStyle = MaterialTheme.typography.bodyMedium.copy(color = Color.White),
+        textStyle = MaterialTheme.typography.labelMedium.copy(color = Color.White),
         colors = TextFieldDefaults.colors(
             focusedContainerColor = Color.White.copy(alpha = 0.1f),
             unfocusedContainerColor = Color.White.copy(alpha = 0.1f),

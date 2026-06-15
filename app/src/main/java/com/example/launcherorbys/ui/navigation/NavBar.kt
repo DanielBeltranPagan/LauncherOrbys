@@ -52,6 +52,24 @@ fun NavBar(
     
     var controlsExpanded by remember { mutableStateOf(false) }
 
+    // Control de debounce para evitar spam de peticiones (1.3 segundos)
+    var lastClickTime by remember { mutableLongStateOf(0L) }
+    val debouncedAction: (String) -> Unit = { action ->
+        val now = System.currentTimeMillis()
+        if (now - lastClickTime >= 1300L) {
+            lastClickTime = now
+            onActionClicked(action)
+        }
+    }
+
+    val toggleControls = {
+        val now = System.currentTimeMillis()
+        if (now - lastClickTime >= 1300L) {
+            lastClickTime = now
+            controlsExpanded = !controlsExpanded
+        }
+    }
+
     // Auto-cierre del menú de controles tras 5 segundos o si la navbar se oculta
     LaunchedEffect(controlsExpanded, isExpanded) {
         if (!isExpanded) {
@@ -131,19 +149,19 @@ fun NavBar(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.Center
                 ) {
-                    NavBarIcon(Icons.AutoMirrored.Filled.ArrowBack, iconColor) { onActionClicked("BACK") }
+                    NavBarIcon(Icons.AutoMirrored.Filled.ArrowBack, iconColor) { debouncedAction("BACK") }
                     Spacer(modifier = Modifier.width(16.dp))
-                    NavBarIcon(Icons.Default.Home, iconColor) { onActionClicked("HOME") }
+                    NavBarIcon(Icons.Default.Home, iconColor) { debouncedAction("HOME") }
                     Spacer(modifier = Modifier.width(16.dp))
-                    NavBarIcon(Icons.Default.CropSquare, iconColor) { onActionClicked("RECENTS") }
+                    NavBarIcon(Icons.Default.CropSquare, iconColor) { debouncedAction("RECENTS") }
                     Spacer(modifier = Modifier.width(16.dp))
-                    NavBarIcon(Icons.Default.Apps, iconColor) { onActionClicked("APPS") }
+                    NavBarIcon(Icons.Default.Apps, iconColor) { debouncedAction("APPS") }
                     Spacer(modifier = Modifier.width(16.dp))
-                    NavBarIcon(Icons.Default.Language, iconColor) { onActionClicked("GOOGLE") }
+                    NavBarIcon(Icons.Default.Language, iconColor) { debouncedAction("GOOGLE") }
                     Spacer(modifier = Modifier.width(16.dp))
-                    NavBarIcon(Icons.Default.Folder, iconColor) { onActionClicked("FILES") }
+                    NavBarIcon(Icons.Default.Folder, iconColor) { debouncedAction("FILES") }
                     Spacer(modifier = Modifier.width(16.dp))
-                    NavBarIcon(Icons.Default.Tune, iconColor) { onActionClicked("SYSTEM_OPTIONS") }
+                    NavBarIcon(Icons.Default.Tune, iconColor) { debouncedAction("SYSTEM_OPTIONS") }
                 }
             }
 
@@ -158,24 +176,23 @@ fun NavBar(
                     Text(
                         text = currentTime,
                         color = iconColor,
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.clickable { onActionClicked("CLOCK") }
+                        style = MaterialTheme.typography.titleSmall,
+                        modifier = Modifier.clickable { debouncedAction("CLOCK") }
                     )
                 }
 
                 val controlsComponent = @Composable {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         if (controlsExpanded) {
-                            NavBarIcon(Icons.Default.SwapVert, iconColor) { onActionClicked("TOGGLE_NAVBAR_POSITION") }
+                            NavBarIcon(Icons.Default.SwapVert, iconColor) { debouncedAction("TOGGLE_NAVBAR_POSITION") }
                             Spacer(modifier = Modifier.width(8.dp))
-                            NavBarIcon(Icons.Default.SwapHoriz, iconColor) { onActionClicked("TOGGLE_CLOCK_SIDE") }
+                            NavBarIcon(Icons.Default.SwapHoriz, iconColor) { debouncedAction("TOGGLE_CLOCK_SIDE") }
                             Spacer(modifier = Modifier.width(8.dp))
                         }
                         NavBarIcon(
                             icon = if (controlsExpanded) Icons.Default.Close else Icons.Default.OpenWith,
                             color = iconColor.copy(alpha = if (controlsExpanded) 0.5f else 1f)
-                        ) { controlsExpanded = !controlsExpanded }
+                        ) { toggleControls() }
                     }
                 }
 

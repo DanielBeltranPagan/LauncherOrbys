@@ -26,6 +26,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
@@ -45,7 +46,13 @@ fun SectionHeader(text: String) {
     Column(modifier = Modifier.padding(vertical = Dimens.PaddingMedium, horizontal = Dimens.PaddingMedium)) {
         HorizontalDivider(color = Color.White.copy(alpha = 0.1f), thickness = 1.dp)
         Spacer(modifier = Modifier.height(Dimens.PaddingSmall))
-        Text(text, style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.4f))
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelSmall,
+            color = Color.White.copy(alpha = 0.4f),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
     }
 }
 
@@ -129,10 +136,10 @@ fun AppItem(
                 Spacer(modifier = Modifier.height(Dimens.PaddingSmall))
                 Text(
                     text = app.label,
-                    style = MaterialTheme.typography.labelSmall,
+                    style = MaterialTheme.typography.labelMedium,
                     maxLines = 1,
-                    color = if (isSelected) Color.White.copy(alpha = 0.6f) else Color.White,
-                    fontSize = Dimens.TextSmall
+                    overflow = TextOverflow.Ellipsis,
+                    color = if (isSelected) Color.White.copy(alpha = 0.6f) else Color.White
                 )
             }
 
@@ -303,7 +310,8 @@ fun SuggestionItem(
             style = MaterialTheme.typography.bodyLarge,
             color = Color.White.copy(alpha = 0.9f),
             modifier = Modifier.weight(1f),
-            maxLines = 1
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
         )
         IconButton(
             onClick = { onAutocomplete(text) },
@@ -450,7 +458,8 @@ private fun LongSearchItem(
             text = label,
             style = MaterialTheme.typography.bodyMedium,
             color = Color.White,
-            maxLines = 1
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
         )
     }
 }
@@ -479,10 +488,10 @@ private fun ItemContainer(
         Spacer(modifier = Modifier.height(Dimens.PaddingSmall))
         Text(
             text = label,
-            style = MaterialTheme.typography.labelSmall,
+            style = MaterialTheme.typography.labelMedium,
             maxLines = 1,
-            color = Color.White,
-            fontSize = Dimens.TextTiny
+            overflow = TextOverflow.Ellipsis,
+            color = Color.White
         )
     }
 }
